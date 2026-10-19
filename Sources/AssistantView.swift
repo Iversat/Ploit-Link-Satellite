@@ -1,5 +1,23 @@
 import SwiftUI
 
+struct SatelliteGlyph: View {
+    var body: some View {
+        GeometryReader { g in
+            let u = g.size.width / 24
+            ZStack {
+                RoundedRectangle(cornerRadius: 2*u).frame(width:6*u,height:10*u)
+                HStack(spacing:8*u) {
+                    RoundedRectangle(cornerRadius:u).frame(width:6*u,height:8*u)
+                    RoundedRectangle(cornerRadius:u).frame(width:6*u,height:8*u)
+                }
+                Rectangle().frame(width:16*u,height:u)
+                Rectangle().frame(width:u,height:5*u).offset(y:-7*u)
+                Circle().frame(width:3*u,height:3*u).offset(y:-10*u)
+            }.rotationEffect(.degrees(38)).frame(width:g.size.width,height:g.size.height)
+        }.aspectRatio(1,contentMode:.fit)
+    }
+}
+
 struct GlassPanel<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -72,7 +90,7 @@ struct AssistantView: View {
     private var header: some View {
         HStack {
             HStack(spacing: 9) {
-                Image(systemName: "satellite.fill").font(.system(size: 18)).foregroundStyle(.black).frame(width: 30,height: 30).background(.white.opacity(0.85),in: RoundedRectangle(cornerRadius: 8))
+                SatelliteGlyph().foregroundStyle(.black).padding(4).frame(width:30,height:30).background(.white.opacity(0.85),in:RoundedRectangle(cornerRadius:8))
                 Text("Connection Assistant").font(.system(size: 19,weight: .semibold))
             }
             Spacer(minLength: 6)
@@ -130,7 +148,7 @@ struct PointingContent: View {
                 Spacer()
                 VStack(spacing:3) { Text(model.training ? "Тренировка наведения" : model.satellite?.name ?? "Спутник").font(.system(size:17,weight:.semibold)); Text(model.training ? "УСЛОВНАЯ ЦЕЛЬ · 135° / 45°" : model.mode?.name ?? "").font(.system(size:10,weight:.medium)).tracking(1.2).foregroundStyle(.white.opacity(0.5)) }
                 Spacer()
-                Image(systemName:"satellite.fill").frame(width:44,height:44).foregroundStyle(.white.opacity(0.7))
+                SatelliteGlyph().frame(width:24,height:24).frame(width:44,height:44).foregroundStyle(.white.opacity(0.7))
             }.padding(.horizontal,22).padding(.top,12)
             Spacer(minLength:20)
             VStack(spacing:10) {

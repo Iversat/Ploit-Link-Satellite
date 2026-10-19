@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 import CoreMotion
 
-@MainActor final class Sensors: NSObject, ObservableObject, CLLocationManagerDelegate {
+@MainActor final class Sensors: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published var observer: Observer?
     @Published var azimuth: Double = 0
     @Published var elevation: Double = 0

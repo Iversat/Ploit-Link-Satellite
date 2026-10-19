@@ -61,6 +61,7 @@ import SwiftUI
         guard !activated else { return }
         activated = true
         #if DEBUG
+        if NSClassFromString("XCTestCase") != nil { return }
         if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home") || ProcessInfo.processInfo.arguments.contains("--ui-screenshot-pointing") {
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
             if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-pointing") {

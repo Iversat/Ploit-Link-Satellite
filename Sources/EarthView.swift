@@ -16,13 +16,14 @@ struct EarthView: UIViewRepresentable {
         let material = SCNMaterial()
         material.diffuse.contents = UIColor.black
         material.emission.contents = UIImage(named: "earth-night.jpg")
+        material.emission.intensity = 1.65
         material.lightingModel = .constant
         sphere.firstMaterial = material
         let globe = SCNNode(geometry: sphere)
         globe.name = "earth"
         // SceneKit sphere longitude seam is at -Z; camera looks down -Z.
         globe.eulerAngles = SCNVector3(Float(latitude * .pi / 180), Float((-longitude - 90) * .pi / 180), 0)
-        globe.position = SCNVector3(0, -0.85, 0)
+        globe.position = SCNVector3(0, -0.60, 0)
         scene.rootNode.addChildNode(globe)
         let atmosphere = SCNSphere(radius: 1.015)
         atmosphere.segmentCount = 128
@@ -39,6 +40,7 @@ struct EarthView: UIViewRepresentable {
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 45
+        camera.camera?.projectionDirection = .vertical
         camera.camera?.zNear = 0.01
         camera.position = SCNVector3(0,0,2.3)
         scene.rootNode.addChildNode(camera)

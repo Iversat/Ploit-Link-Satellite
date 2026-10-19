@@ -13,7 +13,7 @@ struct SatellitePicker: View {
                             Task { await model.select(id:satellite.id) }; dismiss()
                         } label: {
                             HStack(spacing:13) {
-                                Image(systemName:satellite.id == 25544 ? "sparkles.rectangle.stack.fill" : "satellite.fill").font(.system(size:22)).foregroundStyle(.white).frame(width:44,height:44).background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:14))
+                                SatelliteGlyph().frame(width:26,height:26).foregroundStyle(.white).frame(width:44,height:44).background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:14))
                                 VStack(alignment:.leading,spacing:4) {
                                     Text(satellite.name).font(.system(size:17,weight:.semibold)).foregroundStyle(.white)
                                     Text(satellite.subtitle).font(.system(size:12)).foregroundStyle(.secondary)
@@ -51,7 +51,7 @@ struct PassesView: View {
         NavigationStack {
             List {
                 Section {
-                    HStack { Image(systemName:"satellite.fill");Text(model.satellite?.name ?? "Спутник").fontWeight(.semibold) }
+                    HStack { SatelliteGlyph().frame(width:22,height:22);Text(model.satellite?.name ?? "Спутник").fontWeight(.semibold) }
                     LabeledContent("Маска горизонта",value:"\(Int(model.minElevation))°")
                     Text("Окна рассчитаны для вашего положения на ближайшие 48 часов. Время местное. Препятствия и включение ретранслятора не учитываются.").font(.footnote).foregroundStyle(.secondary)
                 }
