@@ -12,6 +12,7 @@ struct OrbitScene: UIViewRepresentable {
     var showGround: Bool
     var observer: Observer?
     var focus: Int
+    var animated: Bool
     var onSelect: (Int)->Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
@@ -48,7 +49,7 @@ struct OrbitScene: UIViewRepresentable {
         let starGeometry=SCNGeometry(sources:[SCNGeometrySource(vertices:stars)],elements:[starElement])
         let starMaterial=SCNMaterial(); starMaterial.lightingModel = .constant; starMaterial.diffuse.contents=UIColor(white:0.6,alpha:1)
         starGeometry.firstMaterial=starMaterial; root.addChildNode(SCNNode(geometry:starGeometry))
-        view.scene=scene; view.pointOfView=camera
+        view.scene=scene; view.pointOfView=camera; view.isPlaying=true
         view.isAccessibilityElement=true; view.accessibilityLabel="Трёхмерная Земля и орбиты спутников. Вращение и масштаб жестами."
         let tap=UITapGestureRecognizer(target:context.coordinator,action:#selector(Coordinator.tap(_:)))
         view.addGestureRecognizer(tap)
@@ -76,7 +77,10 @@ struct OrbitScene: UIViewRepresentable {
                 label.constraints=[SCNBillboardConstraint()]; marker.addChildNode(label); root.addChildNode(marker)
             }
             marker.isHidden=false
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration=animated && !UIAccessibility.isReduceMotionEnabled ? 0.45:0
             marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
+            SCNTransaction.commit()
             marker.scale=SCNVector3(selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85)
             if coordinator.labels[id] != labels[id], let label=marker.childNode(withName:"label",recursively:false) {
                 let text=SCNText(string:labels[id] ?? "",extrusionDepth:0)
@@ -86,7 +90,7 @@ struct OrbitScene: UIViewRepresentable {
                 let bounds=text.boundingBox; label.pivot=SCNMatrix4MakeTranslation((bounds.max.x+bounds.min.x)/2,0,0)
                 coordinator.labels[id]=labels[id]
             }
-            let key="\(id)-\(showGround)-\(pathDates[id]?.timeIntervalSince1970 ?? 0)-\(selectedID==id)"
+            let key="\(id)-\(showGround)-\(pathDates[id]?.timeIntervalSince1970 ?? 0)-\(paths[id]?.orbit.first?.x ?? 0)-\(selectedID==id)"
             if coordinator.pathKeys[id] != key, let path=paths[id] {
                 root.childNode(withName:pathName,recursively:false)?.removeFromParentNode()
                 let points=(showGround ? path.ground:path.orbit).map { SCNVector3($0.sceneX,$0.sceneY,$0.sceneZ) }

@@ -71,9 +71,9 @@ struct PassesView: View {
                     if model.passes.isEmpty && !model.predicting {
                         ContentUnavailableView("Нет прогноза",systemImage:"clock.badge.questionmark",description:Text(model.observer == nil ? "Задайте положение наблюдателя." : "Обновите TLE или измените маску горизонта."))
                     }
-                    ForEach(model.passes) { pass in
+                    ForEach(model.passes.filter{$0.setDate>model.clock}) { pass in
                         VStack(alignment:.leading,spacing:8) {
-                            HStack { Text(pass.inProgress ? "Сейчас над горизонтом" : pass.riseDate.formatted(.dateTime.day().month(.abbreviated))).font(.headline);Spacer();Text("↗ \(Int(pass.maxElevation))°").foregroundStyle(.green) }
+                            HStack { Text(pass.contains(model.clock) ? "Сейчас над горизонтом" : pass.riseDate.formatted(.dateTime.day().month(.abbreviated))).font(.headline);Spacer();Text("↗ \(Int(pass.maxElevation))°").foregroundStyle(.green) }
                             HStack { Text(pass.riseDate.formatted(date:.omitted,time:.shortened));Image(systemName:"arrow.right").font(.caption).foregroundStyle(.secondary);Text(pass.setDate.formatted(date:.omitted,time:.shortened));Spacer();Text("\(Int((pass.set-pass.rise)/60)) мин").foregroundStyle(.secondary) }.font(.system(.body,design:.rounded)).monospacedDigit()
                             Button { orbitDate=pass.riseDate; showOrbits=true } label: { Label("Посмотреть пролёт на орбите",systemImage:"globe") }.font(.system(size:13)).padding(.top,3).accessibilityIdentifier("previewPass-\(pass.id)")
                         }.padding(.vertical,5)

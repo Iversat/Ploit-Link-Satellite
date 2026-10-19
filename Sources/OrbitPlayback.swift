@@ -104,7 +104,7 @@ struct OrbitExplorerView: View {
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
                            showAll:playback.showAll,showGround:playback.showGround,
-                           observer:model.observer,focus:playback.focus) { id in
+                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing) { id in
                     playback.selectedID=id; playback.calculate()
                 }.padding(.bottom,geometry.size.height*0.22).ignoresSafeArea().accessibilityIdentifier("orbitScene")
                 VStack(spacing:12) {
@@ -151,7 +151,8 @@ struct OrbitExplorerView: View {
         VStack(alignment:.leading,spacing:compact ? 10:14) {
             HStack {
                 Label(playback.live ? "СЕЙЧАС" : "ПРОГНОЗ",systemImage:playback.live ? "dot.radiowaves.left.and.right":"clock")
-                    .font(.system(size:11,weight:.bold)).foregroundStyle(playback.live ? .green:.orange).accessibilityIdentifier("orbitTimeMode")
+                    .font(.system(size:11,weight:.bold)).foregroundStyle(playback.live ? .green:.orange)
+                    .accessibilityElement(children:.ignore).accessibilityLabel(playback.live ? "СЕЙЧАС":"ПРОГНОЗ").accessibilityIdentifier("orbitTimeMode")
                 Spacer()
                 Text(playback.date.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM:.omitted)).minute(.twoDigits).second(.twoDigits)))
                     .font(.system(size:14,weight:.medium)).monospacedDigit().accessibilityIdentifier("orbitDate")
@@ -174,7 +175,7 @@ struct OrbitExplorerView: View {
                     VStack(alignment:.leading,spacing:3) {
                         Text(String(format:"%.1f° %@ · %.1f° %@",abs(state.latitude),state.latitude>=0 ? "с. ш.":"ю. ш.",abs(state.longitude),state.longitude>=0 ? "в. д.":"з. д."))
                         Text("Высота \(Int(state.altitudeKm)) км · виток \(Int(state.periodSeconds/60)) мин").foregroundStyle(.white.opacity(0.55))
-                    }.font(.system(size:12)).monospacedDigit().accessibilityIdentifier("orbitCoordinates")
+                    }.font(.system(size:12)).monospacedDigit().accessibilityElement(children:.combine).accessibilityIdentifier("orbitCoordinates")
                 } else { Text("Рассчитываем положение…").font(.footnote).foregroundStyle(.secondary) }
                 Spacer(minLength:4)
                 Button { playback.showAll.toggle() } label: {

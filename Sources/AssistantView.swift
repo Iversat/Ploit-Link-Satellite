@@ -118,7 +118,7 @@ struct AssistantView: View {
         if model.elements == nil { return model.error ?? "Подключитесь к интернету один раз для загрузки TLE." }
         if !model.usable { return "Данным больше 14 дней. Наведение приостановлено до обновления." }
         if let look = model.look, model.aboveHorizon { return "\(model.satellite?.name ?? "") · высота \(Int(look.elevation))° · \(Int(look.rangeKm)) км\(model.stale ? "\nTLE старше 3 дней — возможна ошибка." : "")" }
-        if let pass = model.passes.first { return "\(model.satellite?.name ?? "") · ближайшее окно \(pass.riseDate.formatted(date:.omitted,time:.shortened))." }
+        if let pass = model.session(for:model.selectedID) { return "\(model.satellite?.name ?? "") · ближайшее окно \(SessionText.interval(pass))." }
         return model.error ?? (model.predicting ? "Вычисляем ближайшие пролёты…" : "Ожидаем видимый пролёт выбранного спутника.")
     }
     private func smallButton(_ text: String, icon: String, action: @escaping () -> Void) -> some View {
