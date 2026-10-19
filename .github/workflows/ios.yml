@@ -1,0 +1,74 @@
+name: Build unsigned IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Tools
+        run: |
+          xcodebuild -version
+          command -v xcodegen || brew install xcodegen
+          xcodegen generate
+      - name: SGP4 and prediction tests
+        run: node tools/test-orbit.cjs
+      - name: Build iPhone application
+        run: |
+          set -o pipefail
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build | tee build-device.log
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/ipa/Payload/
+          cd build/ipa
+          /usr/bin/zip -q -r ../Ploit-Satellite-unsigned.ipa Payload
+          cd ../..
+          python3 tools/verify-ipa.py build/Ploit-Satellite-unsigned.ipa
+          shasum -a 256 build/Ploit-Satellite-unsigned.ipa > build/SHA256.txt
+      - name: Native tests and screenshots
+        run: |
+          set -o pipefail
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys;d=json.load(sys.stdin);print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/Tests.xcresult test | tee build-tests.log
+          xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/PloitSatellite.app
+          mkdir -p build/screenshots
+          xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-home
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot build/screenshots/home.png
+          xcrun simctl terminate "$DEVICE" ru.ploit.satellite
+          xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-pointing
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot build/screenshots/pointing-training.png
+      - name: Upload IPA
+        if: ${{ !cancelled() && hashFiles('build/Ploit-Satellite-unsigned.ipa') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Ploit-Satellite-unsigned-IPA
+          path: |
+            build/Ploit-Satellite-unsigned.ipa
+            build/SHA256.txt
+          retention-days: 30
+      - name: Upload native QA
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Native-QA
+          path: |
+            build/screenshots
+            build/Tests.xcresult
+            build-device.log
+            build-tests.log
+          if-no-files-found: warn
+          retention-days: 14

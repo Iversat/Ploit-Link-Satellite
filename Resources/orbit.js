@@ -1,0 +1,47 @@
+/* Local SGP4 bridge. satellite.js 6.0.1, MIT. No network or user-location logging. */
+var currentSatrec = null;
+function installTLE(a,b) {
+  currentSatrec = satellite.twoline2satrec(a,b);
+  return !!currentSatrec && currentSatrec.error === 0;
+}
+function lookAt(ms, lat, lon, altM) {
+  var date = new Date(ms), gmst = satellite.gstime(date);
+  var pv = satellite.propagate(currentSatrec,date);
+  if (!pv || !pv.position || !pv.velocity || currentSatrec.error) throw new Error('SGP4 unavailable');
+  var observer = {latitude:lat*Math.PI/180,longitude:lon*Math.PI/180,height:altM/1000};
+  var ecf = satellite.eciToEcf(pv.position,gmst);
+  var angles = satellite.ecfToLookAngles(observer,ecf);
+  var geo = satellite.eciToGeodetic(pv.position,gmst);
+  var o = satellite.geodeticToEcf(observer);
+  // Central finite difference includes rotating terrestrial observer, in km/s.
+  function range(t) {
+    var d=new Date(t), p=satellite.propagate(currentSatrec,d).position;
+    if(!p) throw new Error('Decayed orbit');
+    var q=satellite.eciToEcf(p,satellite.gstime(d));
+    return Math.hypot(q.x-o.x,q.y-o.y,q.z-o.z);
+  }
+  return {azimuth:angles.azimuth*180/Math.PI,elevation:angles.elevation*180/Math.PI,
+    rangeKm:angles.rangeSat,rangeRate:(range(ms+500)-range(ms-500)),
+    latitude:geo.latitude*180/Math.PI,longitude:geo.longitude*180/Math.PI,altitudeKm:geo.height};
+}
+function lookJSON(ms,lat,lon,alt) { return JSON.stringify(lookAt(ms,lat,lon,alt)); }
+function passesJSON(ms,lat,lon,alt,mask) {
+  // 48 h, 15 s coarse scan + 0.25 s crossing bisection; a mask-defined RF window.
+  var end=ms+48*3600000, step=15000, result=[], active=null;
+  function el(t){return lookAt(t,lat,lon,alt).elevation;}
+  function cross(a,b,rising){for(var k=0;k<16 && b-a>250;k++){var m=(a+b)/2;if((el(m)>=mask)===rising)b=m;else a=m;}return(a+b)/2;}
+  var prev=el(ms);
+  if(prev>=mask) active={rise:ms/1000,culmination:ms/1000,maxElevation:prev,inProgress:true};
+  for(var t=ms+step;t<=end;t+=step){
+    var elevation=el(t);
+    if(!active&&prev<mask&&elevation>=mask){active={rise:cross(t-step,t,true)/1000,culmination:t/1000,maxElevation:elevation,inProgress:false};}
+    if(active){
+      if(elevation>active.maxElevation){active.maxElevation=elevation;active.culmination=t/1000;}
+      if(elevation<mask){active.set=cross(t-step,t,false)/1000;result.push(active);active=null;if(result.length>=12)break;}
+    }
+    prev=elevation;
+  }
+  // An unfinished window is not presented as a completed pass.
+  return JSON.stringify(result);
+}
+if(typeof module!=='undefined') module.exports={installTLE,lookAt,lookJSON,passesJSON};

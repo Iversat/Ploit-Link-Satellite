@@ -1,0 +1,38 @@
+[
+  {
+    "id": 25544, "name": "МКС · ISS", "subtitle": "ARISS · 437,825 / 145,990 МГц", "kind": "Пакетный ретранслятор / FM",
+    "modes": [
+      {"id":"aprs","name":"APRS · AX.25 1200","uplinkMHz":437.825,"downlinkMHz":437.825,"detail":"RS0ISS · 1200 AFSK. ARISS сообщает об активном APRS на 437,825 МГц в период испытаний. Прежние 145,825 МГц сейчас не выбраны автоматически.","canRelay":true},
+      {"id":"fm","name":"FM-ретранслятор","uplinkMHz":145.990,"downlinkMHz":437.800,"detail":"CTCSS 67 Гц. Голосовой ретранслятор; произвольный цифровой протокол не подразумевается.","canRelay":true}
+    ],
+    "status":"Статус источника: 07.10.2026. Оборудование отключают во время отдельных операций МКС. Наличие спутника над горизонтом не подтверждает включение радио.",
+    "source":"https://www.ariss.org/current-status-of-iss-stations.html", "checked":"19.10.2026"
+  },
+  {
+    "id":59112, "name":"SONATE-2", "subtitle":"DP0SNX · 145,825 МГц", "kind":"Пакетный ретранслятор",
+    "modes":[
+      {"id":"aprs","name":"APRS · AX.25 1200","uplinkMHz":145.825,"downlinkMHz":145.825,"detail":"Полудуплекс 1200 AFSK / AX.25. Маршрут через DP0SNX. Работа зависит от активации оператором.","canRelay":true},
+      {"id":"telemetry","name":"Телеметрия · GMSK 9600","downlinkMHz":437.025,"detail":"Приём AX.25 G3RUH GMSK, 9600. Этот режим не предназначен для пересылки пользовательских сообщений.","canRelay":false}
+    ],
+    "status":"Включение APRS уточняется у оператора. Телеметрия активируется во время пролётов над наземными станциями Германии.",
+    "source":"https://www.informatik.uni-wuerzburg.de/raumfahrttechnik/projekte/aktive/sonate-2/information-fuer-funkamateure/", "checked":"19.10.2026"
+  },
+  {
+    "id":27607, "name":"SO-50", "subtitle":"SaudiSat-1C · 145 / 436 МГц", "kind":"Голосовой FM-ретранслятор",
+    "modes":[{"id":"fm","name":"FM · V/U","uplinkMHz":145.850,"downlinkMHz":436.795,"detail":"Голосовой FM: CTCSS 67 Гц, активация таймера отдельным тоном 74,4 Гц. Автоматическая передача сообщений не реализована.","canRelay":true}],
+    "status":"Частотный профиль из AMSAT. Текущий приём и доступность ретранслятора нужно проверять перед сеансом.",
+    "source":"https://www.amsat.org/ans-350-amsat-news-service-weekly-bulletins/", "checked":"19.10.2026"
+  },
+  {
+    "id":68796, "name":"ARICA-2", "subtitle":"JS1YSD · 436,830 МГц", "kind":"Почтовый ящик · по расписанию",
+    "modes":[{"id":"mailbox","name":"Message Exchange · GMSK 4800","uplinkMHz":436.830,"downlinkMHz":436.830,"detail":"AX.25 / GMSK 4800. Обмен сообщениями только в объявленное оператором окно, по его формату и ограничениям.","canRelay":true}],
+    "status":"Известное окно 29.09–13.10.2026 уже закончилось. Новое включение не подтверждено: нельзя считать почтовый ящик доступным сейчас.",
+    "source":"https://sakamotolab.phys.aoyama.ac.jp/research/current_space/ARICA-2_en/amateur", "checked":"19.10.2026"
+  },
+  {
+    "id":62394, "name":"CroCube", "subtitle":"9A0CC · 436,775 МГц", "kind":"Приём телеметрии",
+    "modes":[{"id":"telemetry","name":"Телеметрия · GFSK 9600","downlinkMHz":436.775,"detail":"Профиль приёма. Общедоступная пересылка произвольных сообщений этим профилем не обеспечивается.","canRelay":false}],
+    "status":"Телеметрический спутник добавлен для наведения и приёма внешним оборудованием.",
+    "source":"https://db.satnogs.org/satellite/62394/", "checked":"19.10.2026"
+  }
+]
