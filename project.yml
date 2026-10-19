@@ -22,9 +22,9 @@ targets:
     info:
       path: Config/Info.plist
       properties:
-        CFBundleDisplayName: Connection Assistant
-        CFBundleShortVersionString: "1.2.0"
-        CFBundleVersion: "3"
+        CFBundleDisplayName: Ploit Space
+        CFBundleShortVersionString: "1.3.0"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark

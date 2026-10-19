@@ -25,10 +25,36 @@ function lookAt(ms, lat, lon, altM) {
     latitude:geo.latitude*180/Math.PI,longitude:geo.longitude*180/Math.PI,altitudeKm:geo.height};
 }
 function lookJSON(ms,lat,lon,alt) { return JSON.stringify(lookAt(ms,lat,lon,alt)); }
+function stateAt(ms) {
+  var date=new Date(ms), gmst=satellite.gstime(date),pv=satellite.propagate(currentSatrec,date);
+  if(!pv || !pv.position || currentSatrec.error) throw new Error('SGP4 unavailable');
+  var geo=satellite.eciToGeodetic(pv.position,gmst);
+  return {position:satellite.eciToEcf(pv.position,gmst),latitude:geo.latitude*180/Math.PI,
+    longitude:geo.longitude*180/Math.PI,altitudeKm:geo.height,periodSeconds:2*Math.PI/currentSatrec.no*60};
+}
+function stateJSON(ms) {return JSON.stringify(stateAt(ms));}
+function trajectoryJSON(ms) {
+  var state=stateAt(ms),period=state.periodSeconds*1000,gmst=satellite.gstime(new Date(ms)),orbit=[],ground=[];
+  for(var i=0;i<=120;i++) {
+    var t=ms+(i/120-0.5)*period,date=new Date(t),pv=satellite.propagate(currentSatrec,date);
+    if(!pv || !pv.position || currentSatrec.error) throw new Error('SGP4 unavailable');
+    // Instantaneous orbit in the Earth's frame at the displayed time.
+    orbit.push(satellite.eciToEcf(pv.position,gmst));
+    // Ground track uses Earth's actual rotation at each sample time.
+    var geo=satellite.eciToGeodetic(pv.position,satellite.gstime(date));
+    ground.push(satellite.geodeticToEcf({latitude:geo.latitude,longitude:geo.longitude,height:12}));
+  }
+  return JSON.stringify({orbit:orbit,ground:ground});
+}
 function passesJSON(ms,lat,lon,alt,mask) {
   // 48 h, 15 s coarse scan + 0.25 s crossing bisection; a mask-defined RF window.
   var end=ms+48*3600000, step=15000, result=[], active=null;
-  function el(t){return lookAt(t,lat,lon,alt).elevation;}
+  function el(t){
+    var d=new Date(t),pv=satellite.propagate(currentSatrec,d);
+    if(!pv || !pv.position || currentSatrec.error) throw new Error('SGP4 unavailable');
+    return satellite.ecfToLookAngles({latitude:lat*Math.PI/180,longitude:lon*Math.PI/180,height:alt/1000},
+      satellite.eciToEcf(pv.position,satellite.gstime(d))).elevation*180/Math.PI;
+  }
   function cross(a,b,rising){for(var k=0;k<16 && b-a>250;k++){var m=(a+b)/2;if((el(m)>=mask)===rising)b=m;else a=m;}return(a+b)/2;}
   var prev=el(ms);
   if(prev>=mask) active={rise:ms/1000,culmination:ms/1000,maxElevation:prev,inProgress:true};
@@ -37,11 +63,11 @@ function passesJSON(ms,lat,lon,alt,mask) {
     if(!active&&prev<mask&&elevation>=mask){active={rise:cross(t-step,t,true)/1000,culmination:t/1000,maxElevation:elevation,inProgress:false};}
     if(active){
       if(elevation>active.maxElevation){active.maxElevation=elevation;active.culmination=t/1000;}
-      if(elevation<mask){active.set=cross(t-step,t,false)/1000;result.push(active);active=null;if(result.length>=12)break;}
+      if(elevation<mask){active.set=cross(t-step,t,false)/1000;result.push(active);active=null;if(result.length>=64)break;}
     }
     prev=elevation;
   }
   // An unfinished window is not presented as a completed pass.
   return JSON.stringify(result);
 }
-if(typeof module!=='undefined') module.exports={installTLE,lookAt,lookJSON,passesJSON};
+if(typeof module!=='undefined') module.exports={installTLE,lookAt,lookJSON,passesJSON,stateAt,stateJSON,trajectoryJSON};

@@ -58,6 +58,7 @@ struct AssistantView: View {
                             HStack(spacing: 12) {
                                 smallButton("Спутники",icon:"globe.europe.africa.fill") { sheet = .satellites }
                                 smallButton("Пролёты",icon:"clock.arrow.circlepath") { sheet = .passes }
+                                smallButton("Орбиты",icon:"globe") { model.orbitPresented = true }
                             }
                         }
                         }
@@ -81,12 +82,14 @@ struct AssistantView: View {
             case .settings: SettingsView().environmentObject(model)
             }
         }
+        .sheet(isPresented:$model.cataloguePresented) { SatellitePicker().environmentObject(model) }
+        .fullScreenCover(isPresented:$model.orbitPresented) { OrbitExplorerView().environmentObject(model) }
     }
     private var header: some View {
         HStack {
             HStack(spacing: 9) {
                 SatelliteGlyph().foregroundStyle(.black).padding(4).frame(width:30,height:30).background(.white.opacity(0.85),in:RoundedRectangle(cornerRadius:8))
-                Text("Connection Assistant").font(.system(size: 19,weight: .semibold))
+                Text("Ploit Space").font(.system(size: 22,weight: .semibold))
             }
             Spacer(minLength: 6)
             Button { sheet = .settings } label: { Image(systemName: "ellipsis").font(.system(size: 18,weight: .bold)).frame(width: 44,height: 44).satelliteGlass(in: Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Настройки")
@@ -120,8 +123,8 @@ struct AssistantView: View {
     }
     private func smallButton(_ text: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action:action) {
-            HStack(spacing: 8) { Image(systemName:icon); Text(text) }.font(.system(size: 15,weight: .medium)).frame(maxWidth:.infinity).frame(height:52).satelliteGlass(in:Capsule(),clear:true,interactive:true)
-        }.buttonStyle(.plain)
+            HStack(spacing: 6) { Image(systemName:icon); Text(text) }.font(.system(size: 13,weight: .medium)).frame(maxWidth:.infinity).frame(height:52).satelliteGlass(in:Capsule(),clear:true,interactive:true)
+        }.buttonStyle(.plain).accessibilityIdentifier(text == "Орбиты" ? "openOrbits":text == "Спутники" ? "openSatellites":"openPasses")
     }
 }
 

@@ -17,13 +17,19 @@ for(const s of seeds){
   // Range rate must equal the independently differentiated slant range.
   const r1=ctx.lookAt(date-1000,48.708,44.513,100).rangeKm,r2=ctx.lookAt(date+1000,48.708,44.513,100).rangeKm;
   assert(Math.abs(look.rangeRate-(r2-r1)/2)<0.01);
+  const state=ctx.stateAt(date),track=JSON.parse(ctx.trajectoryJSON(date));
+  assert(Math.abs(state.latitude-look.latitude)<1e-8 && Math.abs(state.longitude-look.longitude)<1e-8);
+  assert(track.orbit.length===121 && track.ground.length===121);
+  assert(Math.hypot(track.orbit[60].x-state.position.x,track.orbit[60].y-state.position.y,track.orbit[60].z-state.position.z)<1e-6);
+  for(const p of [...track.orbit,...track.ground]) assert(Object.values(p).every(Number.isFinite));
+  assert(Math.abs(ctx.stateAt(date+60000).longitude-state.longitude)>0.01);
   const passes=JSON.parse(ctx.passesJSON(date,48.708,44.513,100,10));
   for(const p of passes){
     assert(p.set>p.rise);assert(p.culmination>=p.rise&&p.culmination<=p.set);assert(p.maxElevation>=10&&p.maxElevation<=90);
     if(!p.inProgress) assert(Math.abs(ctx.lookAt(p.rise*1000,48.708,44.513,100).elevation-10)<0.08);
     assert(Math.abs(ctx.lookAt(p.set*1000,48.708,44.513,100).elevation-10)<0.08);
   }
-  console.log(`${s.norad}: valid TLE, finite orbit, Doppler derivative, ${passes.length} verified windows`);count++;
+  console.log(`${s.norad}: valid TLE, moving 3D state/trajectory, Doppler derivative, ${passes.length} verified windows`);count++;
 }
 assert(count>=3);
 // Independent published Vallado SGP4 verification vector, t=0, satellite 00005.

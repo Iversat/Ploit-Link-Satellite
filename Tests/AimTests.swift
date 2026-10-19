@@ -79,4 +79,51 @@ final class AimTests: XCTestCase {
         XCTAssertLessThan(receding.downlink(437.825),437.825)
         XCTAssertGreaterThan(receding.uplink(437.825),437.825)
     }
+    func testSessionWindowBoundariesAndExpiredPasses() {
+        let passes=[PassWindow(rise:100,culmination:150,set:200,maxElevation:45,inProgress:false),PassWindow(rise:300,culmination:350,set:400,maxElevation:60,inProgress:false)]
+        XCTAssertEqual(SessionText.window(passes,at:Date(timeIntervalSince1970:199))?.rise,100)
+        XCTAssertEqual(SessionText.window(passes,at:Date(timeIntervalSince1970:200))?.rise,300)
+        XCTAssertTrue(passes[0].contains(Date(timeIntervalSince1970:100)))
+        XCTAssertFalse(passes[0].contains(Date(timeIntervalSince1970:200)))
+        XCTAssertNil(SessionText.window(passes,at:Date(timeIntervalSince1970:400)))
+    }
+    func testMotionDirectionWrapsNorthAndIncludesElevation() {
+        let current=Look(azimuth:359,elevation:40,rangeKm:1000,rangeRate:0,latitude:0,longitude:0,altitudeKm:400)
+        var next=current; next.azimuth=1; next.elevation=45
+        let motion=TrackingMotion(current:current,future:next)
+        XCTAssertEqual(motion.bearingRate,0.2,accuracy:0.00001)
+        XCTAssertEqual(motion.elevationRate,0.5,accuracy:0.00001)
+        XCTAssertTrue(motion.instruction.contains("вправо")); XCTAssertTrue(motion.instruction.contains("выше"))
+    }
+    func testOrbitalSceneAxesAndTrajectoryMatchPosition() async throws {
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        let entry=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        let date=try XCTUnwrap(entry.epoch),engine=OrbitEngine()
+        let state=try await engine.state(elements:entry,date:date)
+        let look=try await engine.look(elements:entry,observer:.preview,date:date)
+        let path=try await engine.trajectory(elements:entry,date:date)
+        XCTAssertEqual(state.latitude,look.latitude,accuracy:0.000001)
+        XCTAssertEqual(state.longitude,look.longitude,accuracy:0.000001)
+        XCTAssertEqual(path.orbit.count,121); XCTAssertEqual(path.ground.count,121)
+        XCTAssertEqual(path.orbit[60].x,state.position.x,accuracy:0.00001)
+        XCTAssertEqual(path.orbit[60].y,state.position.y,accuracy:0.00001)
+        let greenwich=OrbitPoint(x:6378.137,y:0,z:0)
+        XCTAssertEqual(greenwich.sceneZ,1,accuracy:0.00001); XCTAssertEqual(greenwich.sceneX,0)
+        XCTAssertTrue((5000...8000).contains(state.periodSeconds))
+    }
+    @MainActor func testLivePointingTargetMovesWithSatellite() async throws {
+        let model=AppModel()
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        let entry=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        model.elements=entry; model.manualLocation=true; model.manualLat="48.708"; model.manualLon="44.513"
+        let date=try XCTUnwrap(entry.epoch)
+        await model.tick(at:date)
+        let before=try XCTUnwrap(model.look)
+        await model.tick(at:date.addingTimeInterval(60))
+        let after=try XCTUnwrap(model.look),future=try XCTUnwrap(model.futureLook)
+        XCTAssertGreaterThan(AimMath.separation(az1:before.azimuth,el1:before.elevation,az2:after.azimuth,el2:after.elevation),0.1)
+        let expected=try await OrbitEngine().look(elements:entry,observer:try XCTUnwrap(model.observer),date:date.addingTimeInterval(70))
+        XCTAssertEqual(future.azimuth,expected.azimuth,accuracy:0.000001)
+        model.deactivate()
+    }
 }

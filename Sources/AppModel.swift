@@ -5,6 +5,13 @@ import SwiftUI
     @Published var selectedID = UserDefaults.standard.integer(forKey: "selectedSatellite") == 0 ? 25544 : UserDefaults.standard.integer(forKey: "selectedSatellite")
     @Published var modeID = "aprs"
     @Published var look: Look?
+    @Published var futureLook: Look?
+    @Published var clock = Date()
+    @Published var fleetElements: [Int:Elements] = [:]
+    @Published var sessionWindows: [Int:[PassWindow]] = [:]
+    @Published var calculatingSessions = false
+    @Published var orbitPresented = false
+    @Published var cataloguePresented = false
     @Published var passes: [PassWindow] = []
     @Published var elements: Elements?
     @Published var error: String?
@@ -25,6 +32,7 @@ import SwiftUI
     @Published var pointingIntro = false
     let sensors = Sensors()
     private let engine = OrbitEngine()
+    private let fleetEngine = OrbitEngine()
     private let store = ElementStore()
     private var ticker: Task<Void, Never>?
     private var selectionToken = UUID()
@@ -33,6 +41,12 @@ import SwiftUI
     private var passObserver: Observer?
     private var lastPrediction = Date.distantPast
     private var activated = false
+    private var fleetTask: Task<Void,Never>?
+    private var fleetToken = UUID()
+    private var sessionsObserver: Observer?
+    private var sessionsMask: Double = -1
+    private var sessionsUpdated = Date.distantPast
+    private var screenshotMode = false
     var satellite: Satellite? { satellites.first { $0.id == selectedID } ?? satellites.first }
     var mode: RadioMode? { satellite?.modes.first { $0.id == modeID } ?? satellite?.primaryMode }
     var observer: Observer? {
@@ -47,6 +61,13 @@ import SwiftUI
     var stale: Bool { (elements?.ageDays() ?? 999) > 3 }
     var usable: Bool { (elements?.ageDays() ?? 999) <= 14 }
     var aboveHorizon: Bool { (look?.elevation ?? -90) > 0 }
+    var trackingMotion: TrackingMotion? {
+        guard !training, let look, let futureLook else { return nil }
+        return TrackingMotion(current:look,future:futureLook)
+    }
+    func session(for id: Int, at date: Date? = nil) -> PassWindow? {
+        SessionText.window(sessionWindows[id] ?? (id == selectedID ? passes:[]),at:date ?? clock)
+    }
     var target: (az: Double, el: Double)? {
         if training { return (135,45) }
         guard let look, usable else { return nil }
@@ -69,8 +90,11 @@ import SwiftUI
         #if DEBUG
         if NSClassFromString("XCTestCase") != nil { return }
         if let preview = ProcessInfo.processInfo.arguments.first(where:{$0.hasPrefix("--ui-screenshot-")}) {
+            screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
-            if preview != "--ui-screenshot-home" {
+            if preview.contains("orbits") { orbitPresented = true }
+            else if preview.contains("catalogue") { cataloguePresented = true }
+            else if preview != "--ui-screenshot-home" {
                 training = true; pointing = true
                 axis = preview.contains("back") ? .back : .top
                 pointingStyle = preview.contains("earth") ? .earth : .radar
@@ -89,23 +113,31 @@ import SwiftUI
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.tick()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
     }
-    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
+    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
     func select(id: Int) async {
         let token = UUID(); selectionToken = token
         refreshToken = UUID(); updating = false
         selectedID = id; modeID = satellite?.primaryMode.id ?? "aprs"
         UserDefaults.standard.set(id, forKey: "selectedSatellite")
-        look = nil; elements = nil; passes = []; error = nil
+        look = nil; futureLook = nil; elements = nil; passes = []; error = nil
         passTask?.cancel(); predicting = false; passObserver = nil; lastPrediction = .distantPast
         let cached = await store.cached(id: id)
         guard selectionToken == token else { return }
         elements = cached
+        fleetElements[id] = cached
+        await loadFleetElements()
+        guard selectionToken == token else { return }
         await tick()
-        if cached == nil || (cached?.ageDays() ?? 99) > 1 { await refresh() }
+        if !screenshotMode && (cached == nil || (cached?.ageDays() ?? 99) > 1) { await refresh() }
+    }
+    func loadFleetElements() async {
+        for id in satellites.map(\.id) where fleetElements[id] == nil {
+            fleetElements[id]=await store.cached(id:id)
+        }
     }
     func refresh() async {
         guard !updating else { return }
@@ -114,18 +146,25 @@ import SwiftUI
         do {
             let value = try await store.update(id: id)
             guard refreshToken == token, selectedID == id else { return }
-            elements = value; error = nil; lastPrediction = .distantPast
+            elements = value; fleetElements[id] = value; error = nil; lastPrediction = .distantPast
             await tick()
         } catch { if refreshToken == token { self.error = error.localizedDescription } }
     }
-    func tick() async {
+    func tick(at date: Date = Date()) async {
+        clock = date
         sensors.axis = axis
-        guard let elements, let observer, usable else { look = nil; return }
+        if let observer {
+            let moved=sessionsObserver.map { abs($0.latitude-observer.latitude)+abs($0.longitude-observer.longitude)>0.03 } ?? true
+            if !calculatingSessions && (moved || sessionsMask != minElevation || clock.timeIntervalSince(sessionsUpdated)>300) { refreshSessions() }
+        }
+        guard let elements, let observer, elements.ageDays(at:date)<=14 else { look = nil; futureLook=nil; return }
         let token = selectionToken
         do {
-            let position = try await engine.look(elements: elements, observer: observer, date: Date())
+            let date=clock
+            let position = try await engine.look(elements: elements, observer: observer, date: date)
+            let future = try await engine.look(elements: elements, observer: observer, date: date.addingTimeInterval(10))
             guard token == selectionToken else { return }
-            look = position
+            look = position; futureLook = future
             let moved = passObserver.map { abs($0.latitude-observer.latitude) + abs($0.longitude-observer.longitude) > 0.03 } ?? true
             if !predicting && (moved || Date().timeIntervalSince(lastPrediction) > 300) { predict(elements: elements, observer: observer) }
         } catch { if token == selectionToken { self.error = error.localizedDescription; look = nil } }
@@ -136,17 +175,56 @@ import SwiftUI
         passTask = Task {
             defer { if token == selectionToken { predicting = false } }
             do {
-                let values = try await engine.passes(elements: elements, observer: observer, date: Date(), minElevation: mask)
+                let values = try await fleetEngine.passes(elements: elements, observer: observer, date: Date(), minElevation: mask)
                 guard !Task.isCancelled, token == selectionToken else { return }
-                passes = values; passObserver = observer; lastPrediction = Date()
+                passes = values; sessionWindows[elements.norad] = values; passObserver = observer; lastPrediction = Date()
             } catch { if !Task.isCancelled, token == selectionToken { self.error = error.localizedDescription } }
+        }
+    }
+    func refreshSessions(force: Bool = false) {
+        guard let observer, !calculatingSessions || force else { return }
+        fleetTask?.cancel()
+        let token=UUID(),date=Date(),mask=minElevation
+        fleetToken=token; calculatingSessions=true
+        if sessionsObserver.map({abs($0.latitude-observer.latitude)+abs($0.longitude-observer.longitude)>0.03}) ?? true || sessionsMask != mask { sessionWindows=[:] }
+        sessionsObserver=observer; sessionsMask=mask
+        let ids=satellites.map(\.id)
+        fleetTask=Task {
+            defer { if fleetToken==token { calculatingSessions=false; sessionsUpdated=Date() } }
+            // Load the complete offline catalogue before any network request.
+            for id in ids {
+                guard !Task.isCancelled, fleetToken==token else { return }
+                if fleetElements[id] == nil { fleetElements[id] = await store.cached(id:id) }
+            }
+            for id in ids {
+                guard !Task.isCancelled, fleetToken==token else { return }
+                if let value=fleetElements[id], value.ageDays(at:date)<=14,
+                   let windows=try? await fleetEngine.passes(elements:value,observer:observer,date:date,minElevation:mask) {
+                    guard fleetToken==token else { return }; sessionWindows[id]=windows
+                }
+            }
+            guard !screenshotMode else { return }
+            for id in ids {
+                guard !Task.isCancelled, fleetToken==token else { return }
+                if force || (fleetElements[id]?.ageDays(at:date) ?? 999)>1 {
+                    if let value=try? await store.update(id:id) {
+                        guard fleetToken==token else { return }
+                        fleetElements[id]=value
+                        if selectedID==id { elements=value; lastPrediction = .distantPast }
+                        if let windows=try? await fleetEngine.passes(elements:value,observer:observer,date:date,minElevation:mask) {
+                            guard fleetToken==token else { return }; sessionWindows[id]=windows
+                        }
+                    }
+                }
+            }
         }
     }
     func saveSettings() {
         UserDefaults.standard.set(manualLocation, forKey: "manualLocation")
         UserDefaults.standard.set(manualLat, forKey: "manualLat")
         UserDefaults.standard.set(manualLon, forKey: "manualLon")
-        lastPrediction = .distantPast; passObserver = nil; look = nil; passes = []
+        lastPrediction = .distantPast; passObserver = nil; look = nil; futureLook = nil; passes = []
+        refreshSessions(force:true)
         Task { await tick() }
     }
     func enterPointing(training: Bool = false) { self.training = training; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }

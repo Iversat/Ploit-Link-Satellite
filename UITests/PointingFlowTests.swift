@@ -34,4 +34,31 @@ final class PointingFlowTests: XCTestCase {
         app.buttons["finishPointing"].tap()
         XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
     }
+    func testCatalogueHasSessionsForEverySatellite() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-catalogue"]; app.launch()
+        let iss=app.descendants(matching:.any)["session-25544"]
+        XCTAssertTrue(iss.waitForExistence(timeout:15))
+        XCTAssertTrue(app.buttons["satellite-59112"].exists)
+        app.swipeUp()
+        XCTAssertTrue(app.descendants(matching:.any)["session-62394"].exists)
+    }
+    func testOrbitTimeScrubbingAndReturnToLive() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-orbits"]; app.launch()
+        let timeline=app.sliders["orbitTimeline"]
+        XCTAssertTrue(timeline.waitForExistence(timeout:15))
+        XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
+        timeline.adjust(toNormalizedSliderPosition:0.25)
+        let mode=app.descendants(matching:.any)["orbitTimeMode"]
+        XCTAssertTrue(mode.label.contains("ПРОГНОЗ"))
+        app.buttons["playOrbit"].tap()
+        XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
+        app.buttons["playOrbit"].tap()
+        app.buttons["toggleAllSatellites"].tap()
+        app.buttons["toggleGroundTrack"].tap()
+        app.buttons["focusOrbit"].tap()
+        app.buttons["orbitNow"].tap()
+        XCTAssertTrue(mode.label.contains("СЕЙЧАС"))
+        app.buttons["closeOrbits"].tap()
+        XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+    }
 }

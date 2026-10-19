@@ -47,6 +47,18 @@ actor OrbitEngine {
               js.exception == nil, let data = json.data(using: .utf8) else { throw OrbitError.propagation }
         return try JSONDecoder().decode([PassWindow].self, from: data)
     }
+    func state(elements: Elements, date: Date) throws -> OrbitalState {
+        let js=try prepare(elements)
+        guard let json=js.objectForKeyedSubscript("stateJSON")?.call(withArguments:[date.timeIntervalSince1970*1000])?.toString(),
+              js.exception == nil, let data=json.data(using:.utf8) else { throw OrbitError.propagation }
+        return try JSONDecoder().decode(OrbitalState.self,from:data)
+    }
+    func trajectory(elements: Elements, date: Date) throws -> OrbitalTrajectory {
+        let js=try prepare(elements)
+        guard let json=js.objectForKeyedSubscript("trajectoryJSON")?.call(withArguments:[date.timeIntervalSince1970*1000])?.toString(),
+              js.exception == nil, let data=json.data(using:.utf8) else { throw OrbitError.propagation }
+        return try JSONDecoder().decode(OrbitalTrajectory.self,from:data)
+    }
 }
 
 actor ElementStore {
@@ -66,7 +78,7 @@ actor ElementStore {
         // Only NORAD ID is sent; user's position never leaves the device.
         let url = URL(string: "https://celestrak.org/NORAD/elements/gp.php?CATNR=\(id)&FORMAT=TLE")!
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue("PloitSatellite/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("PloitSpace/1.3", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count < 32000,
               let text = String(data: data, encoding: .utf8) else { throw OrbitError.network }

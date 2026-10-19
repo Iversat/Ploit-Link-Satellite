@@ -85,6 +85,60 @@ struct PassWindow: Codable, Identifiable {
     var id: Double { rise }
     var riseDate: Date { Date(timeIntervalSince1970: rise) }
     var setDate: Date { Date(timeIntervalSince1970: set) }
+    var duration: TimeInterval { set-rise }
+    func contains(_ date: Date) -> Bool { riseDate <= date && date < setDate }
+}
+
+enum SessionText {
+    static func window(_ passes: [PassWindow], at date: Date) -> PassWindow? {
+        passes.filter { $0.setDate > date }.min { $0.rise < $1.rise }
+    }
+    static func clock(_ date: Date) -> String { date.formatted(.dateTime.hour(.twoDigits(amPM:.omitted)).minute(.twoDigits)) }
+    static func countdown(_ seconds: TimeInterval) -> String {
+        let value=max(0,Int(ceil(seconds))),hours=value/3600,minutes=value%3600/60
+        if hours>0 { return "\(hours) ч \(minutes) мин" }
+        if minutes>0 { return "\(minutes) мин \(value%60) с" }
+        return "\(value) с"
+    }
+    static func interval(_ pass: PassWindow) -> String { "\(clock(pass.riseDate))–\(clock(pass.setDate))" }
+    static func title(_ pass: PassWindow, at date: Date) -> String {
+        pass.contains(date) ? "Сеанс сейчас · ещё \(countdown(pass.setDate.timeIntervalSince(date)))" : "До сеанса \(countdown(pass.riseDate.timeIntervalSince(date)))"
+    }
+}
+
+struct OrbitPoint: Codable, Equatable {
+    var x: Double; var y: Double; var z: Double
+    // ECF +X is Greenwich, +Y is 90°E, +Z is the north pole.
+    // SceneKit's sphere front is longitude 0, at scene +Z.
+    var sceneX: Float { Float(y/6378.137) }
+    var sceneY: Float { Float(z/6378.137) }
+    var sceneZ: Float { Float(x/6378.137) }
+}
+struct OrbitalState: Codable {
+    var position: OrbitPoint
+    var latitude: Double
+    var longitude: Double
+    var altitudeKm: Double
+    var periodSeconds: Double
+}
+struct OrbitalTrajectory: Codable {
+    var orbit: [OrbitPoint]
+    var ground: [OrbitPoint]
+}
+
+struct TrackingMotion {
+    var bearingRate: Double
+    var elevationRate: Double
+    init(current: Look, future: Look, seconds: Double = 10) {
+        bearingRate=abs(cos(current.elevation * .pi/180))<0.05 ? 0:AimMath.wrap(future.azimuth-current.azimuth)/seconds
+        elevationRate=(future.elevation-current.elevation)/seconds
+    }
+    var instruction: String {
+        let horizontal=abs(bearingRate)<0.02 ? nil : bearingRate>0 ? "вправо":"влево"
+        let vertical=abs(elevationRate)<0.02 ? nil : elevationRate>0 ? "выше":"ниже"
+        let parts=[horizontal,vertical].compactMap{$0}
+        return parts.isEmpty ? "Следуйте за спутником" : "Дальше: "+parts.joined(separator:" · ")
+    }
 }
 
 enum AimAxis: String, CaseIterable, Identifiable {

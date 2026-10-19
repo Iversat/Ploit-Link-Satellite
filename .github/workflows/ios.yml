@@ -49,7 +49,7 @@ jobs:
           xcrun simctl privacy "$DEVICE" grant location ru.ploit.satellite
           mkdir -p build/screenshots
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-          for SCENE in home radar-top-seeking radar-top-aligned radar-back-aligned earth-back-aligned intro-top intro-back; do
+          for SCENE in home catalogue orbits orbits-forecast radar-top-seeking radar-top-aligned radar-back-aligned earth-back-aligned intro-top intro-back; do
             xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
             xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
             sleep 3

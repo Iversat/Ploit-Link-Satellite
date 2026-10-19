@@ -4,6 +4,7 @@ struct SatellitePicker: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @State private var query = ""
+    @State private var showOrbits = false
     var body: some View {
         NavigationStack {
             List {
@@ -12,6 +13,8 @@ struct SatellitePicker: View {
                         Button {
                             Task { await model.select(id:satellite.id) }; dismiss()
                         } label: {
+                            VStack(alignment:.leading,spacing:10) {
+                            SatelliteSessionLabel(id:satellite.id)
                             HStack(spacing:13) {
                                 SatelliteGlyph().frame(width:26,height:26).foregroundStyle(.white).frame(width:44,height:44).background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:14))
                                 VStack(alignment:.leading,spacing:4) {
@@ -22,6 +25,7 @@ struct SatellitePicker: View {
                                 Spacer()
                                 if model.selectedID == satellite.id { Image(systemName:"checkmark.circle.fill").foregroundStyle(.green) }
                             }.padding(.vertical,6)
+                            }.padding(.vertical,4)
                         }.accessibilityIdentifier("satellite-\(satellite.id)")
                     }
                 } footer: { Text("Спутник в каталоге не означает, что его ретранслятор сейчас включён. Для каждого режима указан источник и дата проверки.") }
@@ -39,14 +43,21 @@ struct SatellitePicker: View {
                     }
                 }
             }.navigationTitle("Спутники").searchable(text:$query,prompt:"Название спутника")
-                .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement:.topBarLeading) { Button { showOrbits=true } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников") }
+                    ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } }
+                }
         }.tint(.white).presentationDragIndicator(.visible)
+            .task { model.refreshSessions() }
+            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView().environmentObject(model) }
     }
 }
 
 struct PassesView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    @State private var showOrbits = false
+    @State private var orbitDate: Date?
     var body: some View {
         NavigationStack {
             List {
@@ -64,6 +75,7 @@ struct PassesView: View {
                         VStack(alignment:.leading,spacing:8) {
                             HStack { Text(pass.inProgress ? "Сейчас над горизонтом" : pass.riseDate.formatted(.dateTime.day().month(.abbreviated))).font(.headline);Spacer();Text("↗ \(Int(pass.maxElevation))°").foregroundStyle(.green) }
                             HStack { Text(pass.riseDate.formatted(date:.omitted,time:.shortened));Image(systemName:"arrow.right").font(.caption).foregroundStyle(.secondary);Text(pass.setDate.formatted(date:.omitted,time:.shortened));Spacer();Text("\(Int((pass.set-pass.rise)/60)) мин").foregroundStyle(.secondary) }.font(.system(.body,design:.rounded)).monospacedDigit()
+                            Button { orbitDate=pass.riseDate; showOrbits=true } label: { Label("Посмотреть пролёт на орбите",systemImage:"globe") }.font(.system(size:13)).padding(.top,3).accessibilityIdentifier("previewPass-\(pass.id)")
                         }.padding(.vertical,5)
                     }
                 }
@@ -77,8 +89,12 @@ struct PassesView: View {
                     }
                 }
             }.navigationTitle("Пролёты")
-                .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement:.topBarLeading) { Button { orbitDate=nil; showOrbits=true } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников") }
+                    ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } }
+                }
         }.tint(.white).presentationDragIndicator(.visible)
+            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(initialDate:orbitDate,initialSatelliteID:model.selectedID).environmentObject(model) }
     }
 }
 
@@ -122,7 +138,7 @@ struct SettingsView: View {
                     Text("Тренировка использует условную цель 135° / 45°, а не реальный спутник.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("О приложении") {
-                    Text("Ploit Satellite · 1.2").fontWeight(.medium)
+                    Text("Ploit Space · 1.3").fontWeight(.medium)
                     Text("Визуальный помощник для внешнего радиоустройства. Не измеряет спутниковый сигнал и не передаёт сообщения встроенным модемом iPhone.").font(.footnote).foregroundStyle(.secondary)
                     Text("Приложение создано независимо от Apple. Иллюстрация Земли: NASA Earth Observatory, Black Marble 2016. Орбиты: satellite.js (MIT), CelesTrak.").font(.caption).foregroundStyle(.secondary)
                     Link("Данные и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Satellite-iOS")!)
@@ -131,5 +147,23 @@ struct SettingsView: View {
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { model.saveSettings();dismiss() } } }
                 .onDisappear { model.saveSettings() }
         }.tint(.white).presentationDragIndicator(.visible)
+    }
+}
+
+struct SatelliteSessionLabel: View {
+    @EnvironmentObject var model: AppModel
+    var id: Int
+    var body: some View {
+        VStack(alignment:.leading,spacing:4) {
+            if let pass=model.session(for:id) {
+                Label(SessionText.title(pass,at:model.clock),systemImage:"clock")
+                    .foregroundStyle(pass.contains(model.clock) ? .green:.cyan)
+                Text("\(pass.riseDate.formatted(.dateTime.day().month(.abbreviated))) · \(SessionText.interval(pass)) · \(SessionText.countdown(pass.duration))")
+                    .foregroundStyle(.secondary)
+            } else {
+                Label(model.observer == nil ? "Нужна геопозиция для сеансов" : model.calculatingSessions ? "Рассчитываем сеанс…" : model.fleetElements[id] == nil ? "Нужны данные орбиты" : (model.fleetElements[id]?.ageDays() ?? 999)>14 ? "Обновите устаревшую орбиту":"Нет сеансов за 48 часов",systemImage:"clock")
+                    .foregroundStyle(.secondary)
+            }
+        }.font(.system(size:11,weight:.medium)).monospacedDigit().accessibilityElement(children:.combine).accessibilityIdentifier("session-\(id)")
     }
 }

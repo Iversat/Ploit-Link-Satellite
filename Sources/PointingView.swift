@@ -91,7 +91,7 @@ struct PointingContent: View {
         if !sensors.motionReady { return "Подготовьте\niPhone" }
         if model.target == nil { return "Обновите\nданные орбиты" }
         if !model.training && !model.aboveHorizon { return "Дождитесь\nпролёта спутника" }
-        if model.aligned { return "Держите направление\nна спутник" }
+        if model.aligned { return model.training ? "Держите направление\nна спутник":"Следуйте телефоном\nза спутником" }
         let horizontal = abs(dx)*cos((model.target?.el ?? 0) * .pi/180)
         if horizontal > abs(dy) && abs(dx)>8 { return dx>0 ? "Поверните iPhone\nвправо" : "Поверните iPhone\nвлево" }
         if model.axis == .top { return dy>0 ? "Поднимите\nверхнюю грань" : "Опустите\nверхнюю грань" }
@@ -101,6 +101,7 @@ struct PointingContent: View {
         if !sensors.motionReady { return sensors.message }
         if !model.training && !model.aboveHorizon { return "Ближайшее окно указано в пролётах" }
         if !sensors.northIsTrue || sensors.headingAccuracy < 0 || sensors.headingAccuracy > 20 { return "Уберите магниты и откалибруйте компас" }
+        if let motion=model.trackingMotion { return motion.instruction+"\n"+model.axis.instruction }
         return model.axis.instruction
     }
     var body: some View {
@@ -156,6 +157,9 @@ struct PointingContent: View {
             Text(status).font(.system(size:13,weight:.semibold)).foregroundStyle(model.aligned ? pointingGreen:.white.opacity(0.5)).accessibilityIdentifier("pointingStatus")
             Text(instruction).font(.system(size:compact ? 24:26,weight:.semibold)).lineSpacing(2).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true).padding(.top,9).accessibilityIdentifier("pointingInstruction")
             Text(hint).font(.system(size:12)).foregroundStyle(.white.opacity(0.42)).multilineTextAlignment(.center).padding(.horizontal,30).padding(.top,14)
+            if !model.training, let pass=model.session(for:model.selectedID) {
+                Text(SessionText.title(pass,at:model.clock)).font(.system(size:11,weight:.medium)).foregroundStyle(.white.opacity(0.55)).monospacedDigit().padding(.top,10)
+            }
             Spacer(minLength:12)
             HStack {
                 Text(model.target.map { "АЗ \(Int($0.az))°  ·  УМ \(Int($0.el))°" } ?? "АЗ —  ·  УМ —")
@@ -175,7 +179,7 @@ struct PointingContent: View {
             header(earth:true)
             Spacer(minLength:12)
             EarthAimBeacon(bearing:dx,aligned:model.aligned).frame(height:size.height*(compact ? 0.15:0.23))
-            Text(model.aligned ? "Держите направление на спутник" : instruction.replacingOccurrences(of:"\n",with:" "))
+            Text(instruction.replacingOccurrences(of:"\n",with:" "))
                 .font(.system(size:20,weight:.semibold)).multilineTextAlignment(.center).padding(.horizontal,18).accessibilityIdentifier("pointingInstruction")
             Text(model.aligned ? "Направление совпало" : status.capitalized).font(.system(size:14)).foregroundStyle(.white.opacity(0.55)).padding(.top,7).accessibilityIdentifier("pointingStatus")
             Spacer().frame(height:compact ? 20:30)
