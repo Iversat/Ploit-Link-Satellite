@@ -26,7 +26,7 @@ struct AssistantView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.ignoresSafeArea()
+                (model.pointing && model.pointingStyle == .radar ? Color(red:0.025,green:0.03,blue:0.04) : Color.black).ignoresSafeArea()
                 if !model.pointing || model.pointingStyle == .earth {
                     EarthView(latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
                     LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
@@ -45,7 +45,7 @@ struct AssistantView: View {
                             Button { model.enterPointing() } label: {
                                 GlassPanel(interactive: true) {
                                     HStack(spacing: 12) {
-                                        SatelliteGlyph().frame(width:25,height:25).frame(width:44,height:44).background(.black.opacity(0.5),in:RoundedRectangle(cornerRadius:13))
+                                        SatelliteGlyph().foregroundStyle(.white).frame(width:25,height:25).frame(width:44,height:44).background(.black.opacity(0.5),in:RoundedRectangle(cornerRadius:13))
                                         VStack(alignment: .leading,spacing: 3) {
                                             Text("Наведение на спутник").font(.system(size: 17,weight: .medium))
                                             Text(model.satellite?.name ?? "Выберите спутник").font(.system(size: 13)).foregroundStyle(.white.opacity(0.65))

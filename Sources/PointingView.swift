@@ -110,7 +110,7 @@ struct PointingContent: View {
                 let size = CGSize(width:geometry.size.width,height:max(geometry.size.height,740))
                 Group {
                     if model.pointingStyle == .radar { radar(size:size) } else { earth(size:size) }
-                }.frame(width:size.width,height:size.height)
+                }.frame(width:size.width).frame(minHeight:geometry.size.height,alignment:.top)
             }.scrollIndicators(.hidden).scrollBounceBehavior(.basedOnSize)
         }
         .sheet(item:$sheet) { panel in
@@ -146,7 +146,7 @@ struct PointingContent: View {
         }
     }
     private func radar(size: CGSize) -> some View {
-        let compact = size.height < 740
+        let compact = size.height <= 740
         let diameter = min(size.width*0.70,size.height*(compact ? 0.32:0.36))
         return VStack(spacing:0) {
             header(earth:false)
@@ -170,7 +170,7 @@ struct PointingContent: View {
         }.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color(red:0.025,green:0.03,blue:0.04).ignoresSafeArea())
     }
     private func earth(size: CGSize) -> some View {
-        let compact = size.height < 740
+        let compact = size.height <= 740
         return VStack(spacing:0) {
             header(earth:true)
             Spacer(minLength:12)
@@ -233,6 +233,7 @@ struct PointingIntro: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.height < 740
+            ScrollView(.vertical) {
             VStack(spacing:0) {
                 HStack {
                     Text(model.training ? "Тренировка":"Наведение на спутник").font(.system(size:14,weight:.semibold)).foregroundStyle(.white.opacity(0.7))
@@ -251,7 +252,8 @@ struct PointingIntro: View {
                 Spacer(minLength:20)
                 AimAxisPicker(axis:$model.axis).padding(.horizontal,26).padding(.bottom,18)
                 Button { model.pointingIntro = false } label: { Text("Продолжить").font(.system(size:17,weight:.semibold)).foregroundStyle(.white).frame(maxWidth:.infinity).frame(height:54).satelliteGlass(in:Capsule(),interactive:true,tint:pointingGreen.opacity(0.35)) }.buttonStyle(.plain).accessibilityIdentifier("continuePointing").padding(.horizontal,26).padding(.bottom,16)
-            }.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color.black.ignoresSafeArea())
+            }.frame(maxWidth:.infinity).frame(minHeight:geometry.size.height,alignment:.top)
+            }.scrollIndicators(.hidden).scrollBounceBehavior(.basedOnSize).background(Color.black.ignoresSafeArea())
         }.preferredColorScheme(.dark)
     }
     private func bullet(_ text:String)->some View { HStack(alignment:.top,spacing:12) { Text("•");Text(text).fixedSize(horizontal:false,vertical:true) }.font(.system(size:15)).foregroundStyle(.white.opacity(0.8)) }
