@@ -26,14 +26,15 @@ struct RadarDial: View {
     var bearingError: Double
     var aligned: Bool
     var available: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         GeometryReader { geometry in
             let d = min(geometry.size.width,geometry.size.height)
             let r = d*0.48
             let a = bearingError * .pi / 180
             ZStack {
-                Circle().stroke(Color(white:0.12),lineWidth:8).padding(d*0.02)
-                    .overlay(Circle().stroke(Color(white:0.28),lineWidth:3).padding(d*0.02))
+                Circle().stroke(Color(white:0.08),lineWidth:8).padding(d*0.02)
+                    .overlay(Circle().stroke(LinearGradient(colors:[Color(white:0.35),Color(white:0.12),Color(white:0.25)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:3).padding(d*0.02))
                 if available {
                     RadarSector().fill(LinearGradient(colors:[pointingGreen.opacity(aligned ? 0.46:0.18),pointingGreen.opacity(0.05)],startPoint:.top,endPoint:.center))
                     RadarArc().stroke(pointingGreen.opacity(aligned ? 1:0.45),style:StrokeStyle(lineWidth:6,lineCap:.round))
@@ -41,8 +42,9 @@ struct RadarDial: View {
                     RadarArc(scale:0.32,halfWidth:42).stroke(pointingGreen.opacity(aligned ? 0.95:0.28),style:StrokeStyle(lineWidth:5,lineCap:.round))
                         .shadow(color:pointingGreen.opacity(0.2),radius:5)
                 }
-                Circle().fill(aligned ? pointingGreen : Color(white:0.16)).frame(width:d*0.24,height:d*0.24)
-                    .overlay(Circle().stroke(aligned ? pointingGreen.opacity(0.9):Color(white:0.26),lineWidth:2).frame(width:d*0.24,height:d*0.24))
+                Circle().fill(RadialGradient(colors:aligned ? [Color(red:0.42,green:1,blue:0.47),pointingGreen] : [Color(white:0.22),Color(white:0.12)],center:.topLeading,startRadius:0,endRadius:d*0.25)).frame(width:d*0.24,height:d*0.24)
+                    .overlay(Circle().stroke(LinearGradient(colors:[.white.opacity(aligned ? 0.45:0.14),.clear],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1).frame(width:d*0.24,height:d*0.24))
+                    .shadow(color:pointingGreen.opacity(aligned ? 0.12:0),radius:18)
                 if available {
                     HStack(spacing:5) {
                         Capsule().fill(.white).frame(width:d*0.045,height:4)
@@ -52,8 +54,8 @@ struct RadarDial: View {
                 }
             }.frame(width:d,height:d)
         }.aspectRatio(1,contentMode:.fit)
-        .animation(.easeOut(duration:0.16),value:bearingError)
-        .animation(.easeInOut(duration:0.25),value:aligned)
+        .animation(reduceMotion ? nil : .easeOut(duration:0.16),value:bearingError)
+        .animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:aligned)
         .accessibilityElement(children:.ignore)
         .accessibilityLabel(aligned ? "Направление совпало" : "Индикатор направления на спутник")
     }
@@ -64,7 +66,7 @@ struct AimAxisPicker: View {
     var body: some View {
         Picker("Ось наведения",selection:$axis) {
             ForEach(AimAxis.allCases) { Text($0.title).tag($0) }
-        }.pickerStyle(.segmented).accessibilityIdentifier("aimAxis")
+        }.pickerStyle(.segmented).controlSize(.large).accessibilityIdentifier("aimAxis")
     }
 }
 
@@ -103,7 +105,13 @@ struct PointingContent: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            if model.pointingStyle == .radar { radar(size:geometry.size) } else { earth(size:geometry.size) }
+            // Keep every control reachable on compact iPhones as well.
+            ScrollView(.vertical) {
+                let size = CGSize(width:geometry.size.width,height:max(geometry.size.height,740))
+                Group {
+                    if model.pointingStyle == .radar { radar(size:size) } else { earth(size:size) }
+                }.frame(width:size.width,height:size.height)
+            }.scrollIndicators(.hidden).scrollBounceBehavior(.basedOnSize)
         }
         .sheet(item:$sheet) { panel in
             switch panel {
@@ -119,21 +127,23 @@ struct PointingContent: View {
         }
     }
     private func header(earth: Bool) -> some View {
+        SatelliteGlassGroup {
         HStack {
             Button {
                 model.pointingStyle = earth ? .radar : .earth
             } label: {
-                Image(systemName:earth ? "scope":"globe.europe.africa").font(.system(size:19,weight:.medium)).frame(width:44,height:36)
-            }.accessibilityIdentifier(earth ? "showRadar":"showEarth").accessibilityLabel(earth ? "Показать круг":"Показать Землю")
+                Image(systemName:earth ? "scope":"globe.europe.africa").font(.system(size:19,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
+            }.buttonStyle(.plain).accessibilityIdentifier(earth ? "showRadar":"showEarth").accessibilityLabel(earth ? "Показать круг":"Показать Землю")
             Spacer(minLength:5)
             Text(model.training ? "Тренировка" : model.satellite?.name ?? "Спутник").font(.system(size:15,weight:.semibold)).lineLimit(1)
             Spacer(minLength:5)
             if earth {
-                Button { model.pointingIntro = true } label: { Image(systemName:"info.circle").font(.system(size:20)).frame(width:44,height:36) }.accessibilityLabel("Как держать iPhone")
+                Button { model.pointingIntro = true } label: { Image(systemName:"info").font(.system(size:19,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Как держать iPhone")
             } else {
-                Button { model.leavePointing() } label: { Text("Завершить").font(.system(size:13,weight:.semibold)).padding(.horizontal,12).padding(.vertical,8).background(Color(red:1,green:0.23,blue:0.23),in:RoundedRectangle(cornerRadius:10)) }.accessibilityIdentifier("finishPointing")
+                Button { model.leavePointing() } label: { Text("Завершить").font(.system(size:13,weight:.semibold)).foregroundStyle(Color(red:1,green:0.40,blue:0.38)).padding(.horizontal,16).frame(height:44).satelliteGlass(in:Capsule(),interactive:true,tint:.red.opacity(0.12)) }.buttonStyle(.plain).accessibilityIdentifier("finishPointing")
             }
         }.foregroundStyle(.white).padding(.horizontal,20).frame(height:44)
+        }
     }
     private func radar(size: CGSize) -> some View {
         let compact = size.height < 740
@@ -153,8 +163,8 @@ struct PointingContent: View {
             }.font(.system(size:10,weight:.medium)).monospacedDigit().foregroundStyle(.white.opacity(0.3)).padding(.bottom,12)
             AimAxisPicker(axis:$model.axis).padding(.horizontal,26)
             Button { model.pointingIntro = true } label: {
-                HStack(spacing:6) { Image(systemName:"iphone");Text("Как держать iPhone") }.font(.system(size:12)).foregroundStyle(.white.opacity(0.5)).frame(height:38)
-            }.accessibilityIdentifier("showPointingIntro")
+                HStack(spacing:6) { Image(systemName:"iphone");Text("Как держать iPhone") }.font(.system(size:13,weight:.medium)).foregroundStyle(.white.opacity(0.85)).padding(.horizontal,18).frame(height:44).satelliteGlass(in:Capsule(),interactive:true)
+            }.buttonStyle(.plain).accessibilityIdentifier("showPointingIntro").padding(.vertical,12)
             Text(model.training ? "Учебная цель · радиосвязь не подтверждается" : "Направление по орбите · радиосвязь не подтверждена")
                 .font(.system(size:10)).foregroundStyle(.white.opacity(0.3)).multilineTextAlignment(.center).padding(.horizontal,20).padding(.bottom,10)
         }.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color(red:0.025,green:0.03,blue:0.04).ignoresSafeArea())
@@ -169,31 +179,33 @@ struct PointingContent: View {
                 .font(.system(size:20,weight:.semibold)).multilineTextAlignment(.center).padding(.horizontal,18).accessibilityIdentifier("pointingInstruction")
             Text(model.aligned ? "Направление совпало" : status.capitalized).font(.system(size:14)).foregroundStyle(.white.opacity(0.55)).padding(.top,7).accessibilityIdentifier("pointingStatus")
             Spacer().frame(height:compact ? 20:30)
+            SatelliteGlassGroup {
             VStack(spacing:0) {
                 earthRow("Спутник",subtitle:model.satellite?.name ?? "Выбрать",icon:"antenna.radiowaves.left.and.right",color:.green,id:"earthSatellites",separator:true) { sheet = .satellites }
                 earthRow("Пролёты",subtitle:"Ближайшие окна видимости",icon:"clock.fill",color:.blue,id:"earthPasses",separator:true) { sheet = .passes }
                 earthRow("Радиопрофиль",subtitle:model.mode?.name ?? "Частоты и режим",icon:"waveform",color:.gray,id:"earthRadio",separator:true) { sheet = .radio }
                 earthRow("Как держать iPhone",subtitle:model.axis.title,icon:"iphone",color:.orange,id:"earthIntro",separator:false) { model.pointingIntro = true }
-            }.background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:15)).overlay(RoundedRectangle(cornerRadius:15).stroke(.white.opacity(0.05),lineWidth:0.5)).padding(.horizontal,24)
+            }.satelliteGlass(in:RoundedRectangle(cornerRadius:28,style:.continuous),clear:true).padding(.horizontal,24)
+            }
             Spacer(minLength:14)
             AimAxisPicker(axis:$model.axis).padding(.horizontal,24)
             Text(model.training ? "Учебная цель · радиосвязь не подтверждается" : "Радиосвязь не подтверждена внешним модулем")
                 .font(.system(size:10)).foregroundStyle(.white.opacity(0.4)).padding(.top,10).padding(.bottom,14)
             Button { model.leavePointing() } label: {
-                Text("Завершить наведение").font(.system(size:17)).foregroundStyle(Color(red:1,green:0.36,blue:0.34)).frame(maxWidth:.infinity).frame(height:50).background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:12))
-            }.accessibilityIdentifier("finishPointing").padding(.horizontal,24).padding(.bottom,12)
-        }.background(.black.opacity(0.24))
+                Text("Завершить наведение").font(.system(size:17,weight:.medium)).foregroundStyle(Color(red:1,green:0.40,blue:0.38)).frame(maxWidth:.infinity).frame(height:54).satelliteGlass(in:Capsule(),clear:true,interactive:true)
+            }.buttonStyle(.plain).accessibilityIdentifier("finishPointing").padding(.horizontal,24).padding(.bottom,12)
+        }.background(.black.opacity(0.14))
     }
     private func earthRow(_ title:String,subtitle:String,icon:String,color:Color,id:String,separator:Bool,action:@escaping ()->Void)->some View {
         Button(action:action) {
             VStack(spacing:0) {
                 HStack(spacing:14) {
-                    Image(systemName:icon).font(.system(size:23,weight:.medium)).foregroundStyle(.white).frame(width:42,height:42).background(LinearGradient(colors:[color.opacity(0.95),color.opacity(0.7)],startPoint:.top,endPoint:.bottom),in:RoundedRectangle(cornerRadius:10))
-                    VStack(alignment:.leading,spacing:3) { Text(title).font(.system(size:17));Text(subtitle).font(.system(size:12)).foregroundStyle(.white.opacity(0.45)).lineLimit(1) }
+                    GlassMenuIcon(symbol:icon,color:color)
+                    VStack(alignment:.leading,spacing:4) { Text(title).font(.system(size:17));Text(subtitle).font(.system(size:13)).foregroundStyle(.white.opacity(0.65)).lineLimit(1) }
                     Spacer(minLength:4)
                     Image(systemName:"chevron.right").font(.system(size:15,weight:.medium)).foregroundStyle(.white.opacity(0.4))
-                }.padding(.horizontal,16).frame(height:72)
-                if separator { Rectangle().fill(.white.opacity(0.12)).frame(height:0.5).padding(.leading,72) }
+                }.padding(.horizontal,18).frame(height:76).contentShape(Rectangle())
+                if separator { Rectangle().fill(.white.opacity(0.14)).frame(height:0.5).padding(.leading,76).padding(.trailing,18) }
             }
         }.buttonStyle(.plain).accessibilityIdentifier(id)
     }
@@ -202,6 +214,7 @@ struct PointingContent: View {
 struct EarthAimBeacon: View {
     var bearing: Double
     var aligned: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         GeometryReader { geometry in
             let x = max(-70,min(70,bearing*1.2))
@@ -211,7 +224,7 @@ struct EarthAimBeacon: View {
                 SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).shadow(color:.white.opacity(0.6),radius:9).offset(x:x,y:-geometry.size.height*0.30)
                 Circle().fill(aligned ? pointingGreen:.white.opacity(0.65)).frame(width:19,height:19).overlay(Circle().stroke(.white,lineWidth:4).frame(width:27,height:27)).offset(y:geometry.size.height*0.33)
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
-        }.animation(.easeOut(duration:0.2),value:bearing)
+        }.animation(reduceMotion ? nil : .easeOut(duration:0.2),value:bearing)
     }
 }
 
@@ -224,7 +237,7 @@ struct PointingIntro: View {
                 HStack {
                     Text(model.training ? "Тренировка":"Наведение на спутник").font(.system(size:14,weight:.semibold)).foregroundStyle(.white.opacity(0.7))
                     Spacer()
-                    Button { model.pointingIntro = false } label: { Image(systemName:"xmark").font(.system(size:14,weight:.semibold)).frame(width:34,height:34).background(.white.opacity(0.1),in:Circle()) }.accessibilityLabel("Закрыть инструкцию")
+                    Button { model.pointingIntro = false } label: { Image(systemName:"xmark").font(.system(size:16,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Закрыть инструкцию")
                 }.padding(.horizontal,24).padding(.top,10)
                 Spacer(minLength:18)
                 HoldingPhoneIllustration(axis:model.axis).frame(width:240,height:compact ? 200:250)
@@ -237,7 +250,7 @@ struct PointingIntro: View {
                 }.padding(.horizontal,30).padding(.top,28)
                 Spacer(minLength:20)
                 AimAxisPicker(axis:$model.axis).padding(.horizontal,26).padding(.bottom,18)
-                Button { model.pointingIntro = false } label: { Text("Продолжить").font(.system(size:17,weight:.semibold)).foregroundStyle(.black).frame(maxWidth:.infinity).frame(height:50).background(pointingGreen,in:RoundedRectangle(cornerRadius:14)) }.accessibilityIdentifier("continuePointing").padding(.horizontal,26).padding(.bottom,16)
+                Button { model.pointingIntro = false } label: { Text("Продолжить").font(.system(size:17,weight:.semibold)).foregroundStyle(.white).frame(maxWidth:.infinity).frame(height:54).satelliteGlass(in:Capsule(),interactive:true,tint:pointingGreen.opacity(0.35)) }.buttonStyle(.plain).accessibilityIdentifier("continuePointing").padding(.horizontal,26).padding(.bottom,16)
             }.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color.black.ignoresSafeArea())
         }.preferredColorScheme(.dark)
     }
@@ -246,6 +259,7 @@ struct PointingIntro: View {
 
 struct HoldingPhoneIllustration: View {
     var axis: AimAxis
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack {
             RadarArc(scale:0.49,halfWidth:78).stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:5,lineCap:.round,dash:[0.1,12])).frame(width:220,height:220).offset(y:12)
@@ -270,7 +284,7 @@ struct HoldingPhoneIllustration: View {
             } else {
                 Image(systemName:"arrow.up.right").font(.system(size:43,weight:.light)).foregroundStyle(pointingGreen).offset(x:67,y:-45)
             }
-        }.animation(.easeInOut(duration:0.25),value:axis)
+        }.animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:axis)
     }
 }
 

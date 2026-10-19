@@ -18,17 +18,9 @@ struct SatelliteGlyph: View {
     }
 }
 
-struct GlassPanel<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View {
-        content.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.12),lineWidth: 0.5))
-    }
-}
-
 struct AssistantView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sheet: Sheet?
     enum Sheet: String, Identifiable { case satellites, passes, settings; var id: String { rawValue } }
     var body: some View {
@@ -47,15 +39,16 @@ struct AssistantView: View {
                             .overlay(Circle().stroke(.white,lineWidth: 3).frame(width: 19,height: 19))
                             .shadow(color: .white.opacity(0.5),radius: 12).accessibilityLabel("Ваше местоположение на иллюстрации Земли")
                         Spacer(minLength: 34)
+                        SatelliteGlassGroup {
                         VStack(spacing: 12) {
                             status
                             Button { model.enterPointing() } label: {
-                                GlassPanel {
+                                GlassPanel(interactive: true) {
                                     HStack(spacing: 12) {
-                                        Image(systemName: "antenna.radiowaves.left.and.right").font(.system(size: 22,weight: .medium)).frame(width: 42,height: 42).background(.black.opacity(0.7),in: RoundedRectangle(cornerRadius: 12))
+                                        SatelliteGlyph().frame(width:25,height:25).frame(width:44,height:44).background(.black.opacity(0.5),in:RoundedRectangle(cornerRadius:13))
                                         VStack(alignment: .leading,spacing: 3) {
-                                            Text("Наведение на спутник").font(.system(size: 16,weight: .medium))
-                                            Text(model.satellite?.name ?? "Выберите спутник").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
+                                            Text("Наведение на спутник").font(.system(size: 17,weight: .medium))
+                                            Text(model.satellite?.name ?? "Выберите спутник").font(.system(size: 13)).foregroundStyle(.white.opacity(0.65))
                                         }
                                         Spacer()
                                         Image(systemName: "chevron.right").font(.system(size: 14,weight: .semibold)).foregroundStyle(.white.opacity(0.4))
@@ -66,6 +59,7 @@ struct AssistantView: View {
                                 smallButton("Спутники",icon:"globe.europe.africa.fill") { sheet = .satellites }
                                 smallButton("Пролёты",icon:"clock.arrow.circlepath") { sheet = .passes }
                             }
+                        }
                         }
                         .padding(.horizontal,22)
                         Spacer().frame(height: max(30,geometry.size.height * 0.09))
@@ -78,7 +72,7 @@ struct AssistantView: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.35),value: model.pointing)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.35),value: model.pointing)
         }
         .sheet(item: $sheet) { item in
             switch item {
@@ -95,7 +89,7 @@ struct AssistantView: View {
                 Text("Connection Assistant").font(.system(size: 19,weight: .semibold))
             }
             Spacer(minLength: 6)
-            Button { sheet = .settings } label: { Image(systemName: "ellipsis").font(.system(size: 18,weight: .bold)).frame(width: 36,height: 36).background(.white.opacity(0.1),in: Circle()) }.accessibilityLabel("Настройки")
+            Button { sheet = .settings } label: { Image(systemName: "ellipsis").font(.system(size: 18,weight: .bold)).frame(width: 44,height: 44).satelliteGlass(in: Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Настройки")
         }.padding(.horizontal,24).padding(.top,14)
     }
     private var status: some View {
@@ -106,7 +100,7 @@ struct AssistantView: View {
                     Spacer()
                     if model.updating { ProgressView().tint(.white) }
                 }
-                Text(statusDetail).font(.system(size: 14)).foregroundStyle(.white.opacity(0.55)).fixedSize(horizontal:false,vertical:true)
+                Text(statusDetail).font(.system(size: 14)).foregroundStyle(.white.opacity(0.68)).fixedSize(horizontal:false,vertical:true)
             }
         }
     }
@@ -126,7 +120,7 @@ struct AssistantView: View {
     }
     private func smallButton(_ text: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action:action) {
-            HStack(spacing: 8) { Image(systemName:icon); Text(text) }.font(.system(size: 14,weight: .medium)).frame(maxWidth:.infinity).padding(.vertical,15).background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius:20).stroke(.white.opacity(0.1),lineWidth:0.5))
+            HStack(spacing: 8) { Image(systemName:icon); Text(text) }.font(.system(size: 15,weight: .medium)).frame(maxWidth:.infinity).frame(height:52).satelliteGlass(in:Capsule(),clear:true,interactive:true)
         }.buttonStyle(.plain)
     }
 }
