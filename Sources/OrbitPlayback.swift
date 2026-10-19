@@ -88,7 +88,7 @@ enum OrbitPalette {
 
 struct OrbitExplorerView: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
     @StateObject private var playback=OrbitPlayback()
     var initialDate: Date? = nil
     var initialSatelliteID: Int? = nil
@@ -103,22 +103,19 @@ struct OrbitExplorerView: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
+            VStack(spacing:0) {
+                header.padding(.top,6).padding(.bottom,8)
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
                            showAll:playback.showAll,showGround:playback.showGround,
                            observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing) { id in
                     playback.selectedID=id; playback.calculate()
-                }.padding(.bottom,geometry.size.height*0.22).ignoresSafeArea().accessibilityIdentifier("orbitScene")
-                VStack(spacing:12) {
-                    header
-                    Spacer(minLength:20)
+                }.frame(maxWidth:.infinity,maxHeight:.infinity).clipped().accessibilityIdentifier("orbitScene")
                     if let message=playback.message {
                         Text(message).font(.footnote).multilineTextAlignment(.center).padding(12)
                             .satelliteGlass(in:Capsule()).padding(.horizontal,20)
                     }
-                    controls(compact:geometry.size.height<740)
-                }.padding(.top,6).padding(.bottom,8)
+                    controls(compact:geometry.size.height<740).padding(.bottom,8)
             }.background(.black)
         }
         .task {
@@ -151,7 +148,7 @@ struct OrbitExplorerView: View {
             Button { playback.focus+=1 } label: {
                 Image(systemName:"viewfinder").font(.system(size:20)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
             }.buttonStyle(.plain).accessibilityLabel("Найти выбранный спутник").accessibilityIdentifier("focusOrbit")
-            Button { dismiss() } label: {
+            Button { playback.stop(); isPresented=false } label: {
                 Image(systemName:"xmark").font(.system(size:17,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
             }.buttonStyle(.plain).accessibilityLabel("Закрыть орбиты").accessibilityIdentifier("closeOrbits")
         }.foregroundStyle(.white).padding(.horizontal,22)

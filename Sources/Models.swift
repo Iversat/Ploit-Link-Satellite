@@ -179,6 +179,42 @@ struct DeviceBasis {
     func vector(for axis: AimAxis) -> DirectionVector { axis == .top ? y : z.negative }
 }
 
+// Azimuthal projection in the phone's screen axes, looking through rear glass (-Z).
+// Unlike azimuth/elevation differences this also follows roll and works at zenith.
+struct RearAimProjection {
+    var x: Double
+    var y: Double
+    var angle: Double
+    var behind: Bool
+    init(azimuth: Double, elevation: Double, basis: DeviceBasis) {
+        let az=azimuth * .pi/180, el=elevation * .pi/180
+        let target=DirectionVector(north:cos(el)*cos(az),west:-cos(el)*sin(az),up:sin(el))
+        let right=target.dot(basis.x), down = -target.dot(basis.y)
+        let forward=target.dot(basis.z.negative)
+        angle=acos(min(1,max(-1,forward))) * 180 / .pi
+        behind=forward<0
+        let length=hypot(right,down), radius=min(1,angle/45)
+        if length>0.000001 { x=right/length*radius; y=down/length*radius }
+        else { x=0; y=forward<0 ? -1:0 }
+    }
+}
+
+// No free camera translation or inertia: the globe always remains at the origin.
+struct GlobeCamera {
+    var yaw: Double = 0
+    var pitch: Double = 0
+    var zoom: Double = 1
+    mutating func drag(x: Double, y: Double, width: Double) {
+        yaw=AimMath.wrap(yaw-x/max(1,width)*180)
+        pitch=min(85,max(-85,pitch+y/max(1,width)*180))
+    }
+    mutating func magnify(_ scale: Double) { zoom=min(1.65,max(0.8,zoom*scale)) }
+    var unitPosition: (x: Double,y: Double,z: Double) {
+        let a=yaw * .pi/180,p=pitch * .pi/180
+        return (sin(a)*cos(p),sin(p),cos(a)*cos(p))
+    }
+}
+
 enum AimMath {
     static func wrap(_ degrees: Double) -> Double { ((degrees + 180).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) - 180 }
     static func separation(az1: Double, el1: Double, az2: Double, el2: Double) -> Double {

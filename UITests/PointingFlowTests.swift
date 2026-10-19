@@ -21,6 +21,7 @@ final class PointingFlowTests: XCTestCase {
         app.launchArguments = ["--ui-screenshot-radar-back-aligned"]
         app.launch()
         XCTAssertTrue(app.buttons["showEarth"].waitForExistence(timeout:10))
+        XCTAssertEqual(app.otherElements["rearAimReticle"].value as? String,"Спутник в центре")
         app.buttons["showEarth"].tap()
         XCTAssertTrue(app.buttons["earthPasses"].waitForExistence(timeout:5))
         app.buttons["earthPasses"].tap()
@@ -46,6 +47,14 @@ final class PointingFlowTests: XCTestCase {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-orbits"]; app.launch()
         let timeline=app.sliders["orbitTimeline"]
         XCTAssertTrue(timeline.waitForExistence(timeout:15))
+        let scene=app.otherElements["orbitScene"]
+        XCTAssertTrue(scene.waitForExistence(timeout:5))
+        let before=scene.value as? String
+        scene.swipeLeft()
+        XCTAssertNotEqual(scene.value as? String,before)
+        XCTAssertTrue((scene.value as? String ?? "").contains("center 0 0"))
+        scene.pinch(withScale:1.2,velocity:1)
+        XCTAssertTrue(app.buttons["closeOrbits"].isHittable)
         let coordinates=app.descendants(matching:.any)["orbitCoordinates"]
         XCTAssertTrue(coordinates.waitForExistence(timeout:15))
         let oldCoordinates=coordinates.label
@@ -66,6 +75,17 @@ final class PointingFlowTests: XCTestCase {
         app.buttons["orbitNow"].tap()
         XCTAssertTrue(mode.label.contains("СЕЙЧАС"))
         app.buttons["closeOrbits"].tap()
+        XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+    }
+    func testCloseOrbitFromCatalogueAndReopen() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-catalogue"]; app.launch()
+        let open=app.buttons["Орбиты спутников"]
+        XCTAssertTrue(open.waitForExistence(timeout:10)); open.tap()
+        let close=app.buttons["closeOrbits"]
+        XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
+        XCTAssertTrue(app.navigationBars["Спутники"].waitForExistence(timeout:5))
+        open.tap(); XCTAssertTrue(close.waitForExistence(timeout:5)); close.tap()
+        app.buttons["Готово"].tap()
         XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
     }
 }

@@ -83,7 +83,7 @@ struct AssistantView: View {
             }
         }
         .sheet(isPresented:$model.cataloguePresented) { SatellitePicker().environmentObject(model) }
-        .fullScreenCover(isPresented:$model.orbitPresented) { OrbitExplorerView().environmentObject(model) }
+        .fullScreenCover(isPresented:$model.orbitPresented) { OrbitExplorerView(isPresented:$model.orbitPresented).environmentObject(model) }
     }
     private var header: some View {
         HStack {

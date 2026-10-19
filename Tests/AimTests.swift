@@ -2,6 +2,39 @@ import XCTest
 @testable import PloitSatellite
 
 final class AimTests: XCTestCase {
+    func testRearReticleCentersAlignedTargetIncludingZenith() {
+        for (az,el) in [(135.0,45.0),(0,90),(359,0)] {
+            let basis=AimMath.pose(azimuth:az,elevation:el,aiming:.back)
+            let p=RearAimProjection(azimuth:az,elevation:el,basis:basis)
+            XCTAssertEqual(p.x,0,accuracy:0.000001); XCTAssertEqual(p.y,0,accuracy:0.000001)
+            XCTAssertFalse(p.behind)
+        }
+    }
+    func testRearReticleTracksScreenAxesRollAndOppositeHemisphere() {
+        let basis=DeviceBasis(x:.init(north:0,west:-1,up:0),y:.init(north:0,west:0,up:1),z:.init(north:-1,west:0,up:0))
+        let right=RearAimProjection(azimuth:20,elevation:0,basis:basis)
+        XCTAssertGreaterThan(right.x,0); XCTAssertEqual(right.y,0,accuracy:0.000001)
+        let up=RearAimProjection(azimuth:0,elevation:20,basis:basis)
+        XCTAssertLessThan(up.y,0); XCTAssertEqual(up.x,0,accuracy:0.000001)
+        let rolled=DeviceBasis(x:basis.y,y:basis.x.negative,z:basis.z)
+        let roll=RearAimProjection(azimuth:20,elevation:0,basis:rolled)
+        XCTAssertEqual(roll.x,0,accuracy:0.000001); XCTAssertGreaterThan(roll.y,0)
+        let opposite=RearAimProjection(azimuth:180,elevation:0,basis:basis)
+        XCTAssertTrue(opposite.behind); XCTAssertEqual(hypot(opposite.x,opposite.y),1,accuracy:0.000001)
+        let closer=RearAimProjection(azimuth:5,elevation:0,basis:basis)
+        XCTAssertLessThan(abs(closer.x),abs(right.x))
+    }
+    func testGlobeCameraFullRotationNoTranslationAndBoundedZoom() {
+        var camera=GlobeCamera()
+        camera.drag(x:200,y:0,width:400)
+        XCTAssertEqual(camera.yaw,-90)
+        camera.drag(x:0,y:10000,width:400)
+        XCTAssertEqual(camera.pitch,85)
+        camera.magnify(100); XCTAssertEqual(camera.zoom,1.65)
+        camera.magnify(0.001); XCTAssertEqual(camera.zoom,0.8)
+        let p=camera.unitPosition
+        XCTAssertEqual(p.x*p.x+p.y*p.y+p.z*p.z,1,accuracy:0.000001)
+    }
     func testKnownFlatPhoneAxes() {
         let basis = DeviceBasis(x:.init(north:0,west:-1,up:0),y:.init(north:1,west:0,up:0),z:.init(north:0,west:0,up:1))
         let top = AimMath.direction(axis:.top,basis:basis)

@@ -1,6 +1,11 @@
 import SwiftUI
 import SceneKit
 
+final class GlobeSceneView: SCNView {
+    var layoutCamera: (() -> Void)?
+    override func layoutSubviews() { super.layoutSubviews(); layoutCamera?() }
+}
+
 struct OrbitScene: UIViewRepresentable {
     var states: [Int:OrbitalState]
     var paths: [Int:OrbitalTrajectory]
@@ -16,13 +21,9 @@ struct OrbitScene: UIViewRepresentable {
     var onSelect: (Int)->Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
-        let view=SCNView()
+        let view=GlobeSceneView()
         view.backgroundColor = .black; view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond=30; view.allowsCameraControl=true
-        view.cameraControlConfiguration.allowsTranslation=false
-        view.defaultCameraController.inertiaEnabled=true
-        view.defaultCameraController.interactionMode = .orbitTurntable
-        view.defaultCameraController.target=SCNVector3Zero
+        view.preferredFramesPerSecond=30; view.allowsCameraControl=false
         let scene=SCNScene(),root=scene.rootNode
         let sphere=SCNSphere(radius:1); sphere.segmentCount=96
         let earth=SCNMaterial(); earth.lightingModel = .constant
@@ -50,8 +51,15 @@ struct OrbitScene: UIViewRepresentable {
         let starMaterial=SCNMaterial(); starMaterial.lightingModel = .constant; starMaterial.diffuse.contents=UIColor(white:0.6,alpha:1)
         starGeometry.firstMaterial=starMaterial; root.addChildNode(SCNNode(geometry:starGeometry))
         view.scene=scene; view.pointOfView=camera; view.isPlaying=true
+        context.coordinator.view=view
+        view.layoutCamera = { [weak coordinator=context.coordinator] in coordinator?.applyCamera() }
         view.isAccessibilityElement=true; view.accessibilityLabel="Трёхмерная Земля и орбиты спутников. Вращение и масштаб жестами."
         let tap=UITapGestureRecognizer(target:context.coordinator,action:#selector(Coordinator.tap(_:)))
+        let pan=UIPanGestureRecognizer(target:context.coordinator,action:#selector(Coordinator.pan(_:)))
+        pan.maximumNumberOfTouches=1
+        let pinch=UIPinchGestureRecognizer(target:context.coordinator,action:#selector(Coordinator.pinch(_:)))
+        tap.require(toFail:pan)
+        view.addGestureRecognizer(pan); view.addGestureRecognizer(pinch)
         view.addGestureRecognizer(tap)
         return view
     }
@@ -113,11 +121,12 @@ struct OrbitScene: UIViewRepresentable {
             if node.parent == nil { root.addChildNode(node) }
         }
         if coordinator.lastFocus != focus || (!coordinator.didFocus && states[selectedID] != nil),
-           let point=states[selectedID]?.position, let camera=view.pointOfView {
+           let point=states[selectedID]?.position {
             let length=sqrt(point.sceneX*point.sceneX+point.sceneY*point.sceneY+point.sceneZ*point.sceneZ)
-            camera.position=SCNVector3(point.sceneX/length*4,point.sceneY/length*4,point.sceneZ/length*4)
-            camera.look(at:SCNVector3Zero)
-            view.defaultCameraController.target=SCNVector3Zero
+            coordinator.camera.yaw=Double(atan2(point.sceneX,point.sceneZ))*180 / .pi
+            coordinator.camera.pitch=min(85,max(-85,Double(asin(point.sceneY/length))*180 / .pi))
+            coordinator.camera.zoom=1
+            coordinator.applyCamera()
             coordinator.lastFocus=focus; coordinator.didFocus=true
         }
         view.setNeedsDisplay()
@@ -128,6 +137,31 @@ struct OrbitScene: UIViewRepresentable {
         var didFocus=false
         var labels: [Int:String]=[:]
         var pathKeys: [Int:String]=[:]
+        weak var view: SCNView?
+        var camera=GlobeCamera()
+        func applyCamera() {
+            guard let view, let node=view.pointOfView,view.bounds.width>0,view.bounds.height>0 else { return }
+            let halfVertical=43.0 * Double.pi/360
+            let halfHorizontal=atan(tan(halfVertical)*Double(view.bounds.width/view.bounds.height))
+            let distance=1.22/sin(min(halfVertical,halfHorizontal))/camera.zoom
+            let p=camera.unitPosition
+            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            node.position=SCNVector3(Float(p.x*distance),Float(p.y*distance),Float(p.z*distance))
+            node.look(at:SCNVector3Zero)
+            SCNTransaction.commit()
+            #if DEBUG
+            view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0",camera.yaw,camera.pitch,camera.zoom)
+            #endif
+        }
+        @objc func pan(_ gesture: UIPanGestureRecognizer) {
+            guard let view else { return }
+            let delta=gesture.translation(in:view)
+            camera.drag(x:Double(delta.x),y:Double(delta.y),width:Double(view.bounds.width))
+            gesture.setTranslation(.zero,in:view); applyCamera()
+        }
+        @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
+            camera.magnify(Double(gesture.scale)); gesture.scale=1; applyCamera()
+        }
         @objc func tap(_ gesture: UITapGestureRecognizer) {
             guard let view=gesture.view as? SCNView else { return }
             for hit in view.hitTest(gesture.location(in:view),options:nil) {

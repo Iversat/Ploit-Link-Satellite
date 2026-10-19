@@ -70,6 +70,40 @@ struct AimAxisPicker: View {
     }
 }
 
+struct RearAimReticle: View {
+    var projection: RearAimProjection?
+    var aligned: Bool
+    var available: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        GeometryReader { g in
+            let d=min(g.size.width,g.size.height), radius=d*0.42
+            ZStack {
+                Circle().fill(.black.opacity(0.22))
+                Circle().stroke(.white.opacity(0.16),lineWidth:1)
+                Circle().stroke(.white.opacity(0.08),style:StrokeStyle(lineWidth:1,dash:[3,7])).padding(d*0.24)
+                Rectangle().fill(.white.opacity(0.12)).frame(width:d*0.78,height:1)
+                Rectangle().fill(.white.opacity(0.12)).frame(width:1,height:d*0.78)
+                Circle().fill(pointingGreen.opacity(aligned ? 0.24:0.07)).frame(width:d*0.20,height:d*0.20)
+                    .overlay(Circle().stroke(aligned ? pointingGreen:.white.opacity(0.65),lineWidth:2))
+                    .shadow(color:pointingGreen.opacity(aligned ? 0.4:0),radius:16)
+                if available, let p=projection {
+                    SatelliteGlyph().foregroundStyle(aligned ? pointingGreen:.white)
+                        .frame(width:d*0.11,height:d*0.11)
+                        .shadow(color:.black,radius:4)
+                        .offset(x:p.x*radius,y:p.y*radius)
+                }
+            }.frame(width:d,height:d).frame(maxWidth:.infinity,maxHeight:.infinity)
+        }.aspectRatio(1,contentMode:.fit)
+            .animation(reduceMotion ? nil:.linear(duration:0.08),value:projection?.x)
+            .animation(reduceMotion ? nil:.linear(duration:0.08),value:projection?.y)
+            .accessibilityElement(children:.ignore)
+            .accessibilityLabel("Прицел заднего стекла")
+            .accessibilityValue(aligned ? "Спутник в центре":projection?.behind == true ? "Спутник со стороны экрана":"Совместите спутник с центром")
+            .accessibilityIdentifier("rearAimReticle")
+    }
+}
+
 struct PointingContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var sensors: Sensors
@@ -79,6 +113,10 @@ struct PointingContent: View {
     private var dx: Double { model.target.map { AimMath.wrap($0.az-sensors.azimuth) } ?? 0 }
     private var dy: Double { model.target.map { $0.el-sensors.elevation } ?? 0 }
     private var available: Bool { model.target != nil && sensors.motionReady && (model.training || model.aboveHorizon) }
+    private var rearProjection: RearAimProjection? {
+        guard let target=model.target, let basis=sensors.lastBasis else { return nil }
+        return RearAimProjection(azimuth:target.az,elevation:target.el,basis:basis)
+    }
     private var status: String {
         if !sensors.motionReady { return "ПОДГОТОВКА" }
         if model.target == nil { return "НУЖНА ОРБИТА" }
@@ -92,6 +130,10 @@ struct PointingContent: View {
         if model.target == nil { return "Обновите\nданные орбиты" }
         if !model.training && !model.aboveHorizon { return "Дождитесь\nпролёта спутника" }
         if model.aligned { return model.training ? "Держите направление\nна спутник":"Следуйте телефоном\nза спутником" }
+        if model.axis == .back {
+            if rearProjection?.behind == true { return "Разверните заднее стекло\nк спутнику" }
+            return "Совместите спутник\nс центром прицела"
+        }
         let horizontal = abs(dx)*cos((model.target?.el ?? 0) * .pi/180)
         if horizontal > abs(dy) && abs(dx)>8 { return dx>0 ? "Поверните iPhone\nвправо" : "Поверните iPhone\nвлево" }
         if model.axis == .top { return dy>0 ? "Поднимите\nверхнюю грань" : "Опустите\nверхнюю грань" }
@@ -101,6 +143,7 @@ struct PointingContent: View {
         if !sensors.motionReady { return sensors.message }
         if !model.training && !model.aboveHorizon { return "Ближайшее окно указано в пролётах" }
         if !sensors.northIsTrue || sensors.headingAccuracy < 0 || sensors.headingAccuracy > 20 { return "Уберите магниты и откалибруйте компас" }
+        if model.axis == .back { return "Направляйте заднее стекло в сторону значка.\nУдерживайте спутник в центре, следуя за ним." }
         if let motion=model.trackingMotion { return motion.instruction+"\n"+model.axis.instruction }
         return model.axis.instruction
     }
@@ -152,7 +195,10 @@ struct PointingContent: View {
         return VStack(spacing:0) {
             header(earth:false)
             Spacer().frame(height:size.height*(compact ? 0.06:0.11))
-            RadarDial(bearingError:dx,aligned:model.aligned,available:available).frame(width:diameter,height:diameter)
+            Group {
+                if model.axis == .back { RearAimReticle(projection:rearProjection,aligned:model.aligned,available:available) }
+                else { RadarDial(bearingError:dx,aligned:model.aligned,available:available) }
+            }.frame(width:diameter,height:diameter)
             Spacer().frame(height:size.height*(compact ? 0.045:0.075))
             Text(status).font(.system(size:13,weight:.semibold)).foregroundStyle(model.aligned ? pointingGreen:.white.opacity(0.5)).accessibilityIdentifier("pointingStatus")
             Text(instruction).font(.system(size:compact ? 24:26,weight:.semibold)).lineSpacing(2).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true).padding(.top,9).accessibilityIdentifier("pointingInstruction")
@@ -178,7 +224,10 @@ struct PointingContent: View {
         return VStack(spacing:0) {
             header(earth:true)
             Spacer(minLength:12)
-            EarthAimBeacon(bearing:dx,aligned:model.aligned).frame(height:size.height*(compact ? 0.15:0.23))
+            Group {
+                if model.axis == .back { RearAimReticle(projection:rearProjection,aligned:model.aligned,available:available) }
+                else { EarthAimBeacon(bearing:dx,aligned:model.aligned) }
+            }.frame(height:size.height*(compact ? 0.15:0.23))
             Text(instruction.replacingOccurrences(of:"\n",with:" "))
                 .font(.system(size:20,weight:.semibold)).multilineTextAlignment(.center).padding(.horizontal,18).accessibilityIdentifier("pointingInstruction")
             Text(model.aligned ? "Направление совпало" : status.capitalized).font(.system(size:14)).foregroundStyle(.white.opacity(0.55)).padding(.top,7).accessibilityIdentifier("pointingStatus")
@@ -250,7 +299,7 @@ struct PointingIntro: View {
                 Text(model.axis == .top ? "Верхняя грань\nв сторону спутника" : "Заднее стекло\nв сторону спутника").font(.system(size:28,weight:.semibold)).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true).accessibilityIdentifier("introTitle")
                 VStack(alignment:.leading,spacing:18) {
                     bullet(model.axis == .top ? "Держите экран перед собой и направляйте верхний торец iPhone." : "Ориентир — перпендикуляр к плоскости заднего стекла iPhone.")
-                    bullet("Поворачивайте и наклоняйте телефон, пока точка не окажется в зелёном секторе.")
+                    bullet(model.axis == .back ? "Поворачивайте и наклоняйте телефон, чтобы значок спутника оказался в центре прицела. Следуйте за ним, удерживая в центре." : "Поворачивайте и наклоняйте телефон, пока точка не окажется в зелёном секторе.")
                     bullet("Зелёный круг подтверждает направление. Наличие радиосвязи проверяет внешний модуль.")
                 }.padding(.horizontal,30).padding(.top,28)
                 Spacer(minLength:20)

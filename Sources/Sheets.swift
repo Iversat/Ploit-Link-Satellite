@@ -49,7 +49,7 @@ struct SatellitePicker: View {
                 }
         }.tint(.white).presentationDragIndicator(.visible)
             .task { model.refreshSessions() }
-            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView().environmentObject(model) }
+            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(isPresented:$showOrbits).environmentObject(model) }
     }
 }
 
@@ -94,7 +94,7 @@ struct PassesView: View {
                     ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } }
                 }
         }.tint(.white).presentationDragIndicator(.visible)
-            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(initialDate:orbitDate,initialSatelliteID:model.selectedID).environmentObject(model) }
+            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(isPresented:$showOrbits,initialDate:orbitDate,initialSatelliteID:model.selectedID).environmentObject(model) }
     }
 }
 

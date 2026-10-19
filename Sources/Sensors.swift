@@ -18,7 +18,7 @@ import CoreMotion
             if let basis = lastBasis { apply(basis) } else { motionReady = false }
         }
     }
-    private var lastBasis: DeviceBasis?
+    private(set) var lastBasis: DeviceBasis?
     private let location = CLLocationManager()
     private let motion = CMMotionManager()
     private var active = false
