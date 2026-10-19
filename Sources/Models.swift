@@ -93,7 +93,14 @@ enum SessionText {
     static func window(_ passes: [PassWindow], at date: Date) -> PassWindow? {
         passes.filter { $0.setDate > date }.min { $0.rise < $1.rise }
     }
-    static func clock(_ date: Date) -> String { date.formatted(.dateTime.hour(.twoDigits(amPM:.omitted)).minute(.twoDigits)) }
+    private static func formatter(_ format: String) -> DateFormatter {
+        let value=DateFormatter(); value.locale = .autoupdatingCurrent
+        value.timeZone = .autoupdatingCurrent; value.dateFormat=format; return value
+    }
+    private static let clockFormat=formatter("HH:mm")
+    private static let timestampFormat=formatter("d MMM · HH:mm:ss")
+    static func clock(_ date: Date) -> String { clockFormat.string(from:date) }
+    static func timestamp(_ date: Date) -> String { timestampFormat.string(from:date) }
     static func countdown(_ seconds: TimeInterval) -> String {
         let value=max(0,Int(ceil(seconds))),hours=value/3600,minutes=value%3600/60
         if hours>0 { return "\(hours) ч \(minutes) мин" }

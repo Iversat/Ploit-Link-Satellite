@@ -87,6 +87,11 @@ final class AimTests: XCTestCase {
         XCTAssertFalse(passes[0].contains(Date(timeIntervalSince1970:200)))
         XCTAssertNil(SessionText.window(passes,at:Date(timeIntervalSince1970:400)))
     }
+    func testSessionClockHasUnambiguous24HourTime() throws {
+        let date=try XCTUnwrap(Calendar.current.date(from:DateComponents(year:2026,month:10,day:19,hour:18,minute:5,second:0)))
+        XCTAssertEqual(SessionText.clock(date),"18:05")
+        XCTAssertTrue(SessionText.timestamp(date).contains("18:05:00"))
+    }
     func testMotionDirectionWrapsNorthAndIncludesElevation() {
         let current=Look(azimuth:359,elevation:40,rangeKm:1000,rangeRate:0,latitude:0,longitude:0,altitudeKm:400)
         var next=current; next.azimuth=1; next.elevation=45

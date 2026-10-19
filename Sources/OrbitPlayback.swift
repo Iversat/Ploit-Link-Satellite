@@ -121,7 +121,13 @@ struct OrbitExplorerView: View {
         .task {
             var date=initialDate
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-forecast") { date=model.session(for:model.selectedID)?.riseDate ?? Date().addingTimeInterval(3600) }
+            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-forecast") {
+                for _ in 0..<20 {
+                    if model.session(for:model.selectedID) != nil { break }
+                    try? await Task.sleep(nanoseconds:100_000_000)
+                }
+                date=model.session(for:model.selectedID)?.riseDate ?? Date().addingTimeInterval(3600)
+            }
             #endif
             playback.configure(elements:model.fleetElements,selectedID:initialSatelliteID ?? model.selectedID,initialDate:date)
             model.refreshSessions()
@@ -154,7 +160,7 @@ struct OrbitExplorerView: View {
                     .font(.system(size:11,weight:.bold)).foregroundStyle(playback.live ? .green:.orange)
                     .accessibilityElement(children:.ignore).accessibilityLabel(playback.live ? "СЕЙЧАС":"ПРОГНОЗ").accessibilityIdentifier("orbitTimeMode")
                 Spacer()
-                Text(playback.date.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM:.omitted)).minute(.twoDigits).second(.twoDigits)))
+                Text(SessionText.timestamp(playback.date))
                     .font(.system(size:14,weight:.medium)).monospacedDigit().accessibilityIdentifier("orbitDate")
             }
             ScrollView(.horizontal) {
@@ -191,7 +197,7 @@ struct OrbitExplorerView: View {
                     }
                     Spacer(minLength:4)
                     Button { playback.jump(to:session.riseDate); playback.focus+=1 } label: {
-                        Image(systemName:"forward.end.fill").font(.system(size:18)).frame(width:36,height:36)
+                        Text("К сеансу").font(.system(size:12,weight:.semibold)).padding(.horizontal,12).frame(height:36).background(.white.opacity(0.10),in:Capsule())
                     }.accessibilityLabel("К началу сеанса").accessibilityIdentifier("jumpToSession")
                 }
             } else {

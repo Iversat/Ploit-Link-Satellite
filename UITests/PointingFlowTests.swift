@@ -50,6 +50,9 @@ final class PointingFlowTests: XCTestCase {
         timeline.adjust(toNormalizedSliderPosition:0.25)
         let mode=app.descendants(matching:.any)["orbitTimeMode"]
         XCTAssertTrue(mode.label.contains("ПРОГНОЗ"))
+        XCTAssertTrue(app.buttons["jumpToSession"].waitForExistence(timeout:5))
+        app.buttons["jumpToSession"].tap()
+        XCTAssertTrue(mode.label.contains("ПРОГНОЗ"))
         app.buttons["playOrbit"].tap()
         XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
         app.buttons["playOrbit"].tap()
