@@ -26,6 +26,7 @@ jobs:
           set -o pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build | tee build-device.log
       - name: Package unsigned IPA
+        id: package
         run: |
           mkdir -p build/ipa/Payload
           cp -R build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/ipa/Payload/
@@ -52,7 +53,7 @@ jobs:
           sleep 3
           xcrun simctl io "$DEVICE" screenshot build/screenshots/pointing-training.png
       - name: Upload IPA
-        if: ${{ !cancelled() && hashFiles('build/Ploit-Satellite-unsigned.ipa') != '' }}
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Ploit-Satellite-unsigned-IPA
