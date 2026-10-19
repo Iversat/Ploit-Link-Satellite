@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum HomePanel: String, Identifiable {
+    case satellites, passes, settings
+    var id: String { rawValue }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var satellites: [Satellite] = []
     @Published var selectedID = UserDefaults.standard.integer(forKey: "selectedSatellite") == 0 ? 25544 : UserDefaults.standard.integer(forKey: "selectedSatellite")
@@ -11,7 +16,7 @@ import SwiftUI
     @Published var sessionWindows: [Int:[PassWindow]] = [:]
     @Published var calculatingSessions = false
     @Published var orbitPresented = false
-    @Published var cataloguePresented = false
+    @Published var homePanel: HomePanel?
     @Published var passes: [PassWindow] = []
     @Published var elements: Elements?
     @Published var error: String?
@@ -93,8 +98,9 @@ import SwiftUI
             screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
             if preview.contains("orbits") { orbitPresented = true }
-            else if preview.contains("catalogue") { cataloguePresented = true }
-            else if preview != "--ui-screenshot-home" {
+            else if preview == "--ui-screenshot-settings" { homePanel = .settings }
+            else if preview.contains("catalogue") { homePanel = .satellites }
+            else if !preview.contains("home") {
                 training = true; pointing = true
                 axis = preview.contains("back") ? .back : .top
                 pointingStyle = preview.contains("earth") ? .earth : .radar
@@ -103,6 +109,14 @@ import SwiftUI
                 pointingIntro = preview.contains("intro")
             }
             Task { await select(id: selectedID) }
+            if preview.contains("settings-stress") {
+                ticker=Task { [weak self] in
+                    while !Task.isCancelled {
+                        await self?.tick()
+                        try? await Task.sleep(nanoseconds:500_000_000)
+                    }
+                }
+            }
             return
         }
         #endif

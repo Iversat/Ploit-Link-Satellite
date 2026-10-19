@@ -101,6 +101,8 @@ struct PassesView: View {
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    @State private var originalLocation: String?
+    private var locationKey: String { "\(model.manualLocation)|\(model.manualLat)|\(model.manualLon)|\(model.minElevation)" }
     var body: some View {
         NavigationStack {
             Form {
@@ -138,14 +140,15 @@ struct SettingsView: View {
                     Text("Тренировка использует условную цель 135° / 45°, а не реальный спутник.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("О приложении") {
-                    Text("Ploit Space · 1.3.1").fontWeight(.medium)
+                    Text("Ploit Space · 1.3.2").fontWeight(.medium)
                     Text("Визуальный помощник для внешнего радиоустройства. Не измеряет спутниковый сигнал и не передаёт сообщения встроенным модемом iPhone.").font(.footnote).foregroundStyle(.secondary)
                     Text("Приложение создано независимо от Apple. Иллюстрация Земли: NASA Earth Observatory, Black Marble 2016. Орбиты: satellite.js (MIT), CelesTrak.").font(.caption).foregroundStyle(.secondary)
                     Link("Данные и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Satellite-iOS")!)
                 }
             }.navigationTitle("Настройки")
-                .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { model.saveSettings();dismiss() } } }
-                .onDisappear { model.saveSettings() }
+                .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() }.accessibilityIdentifier("closeSettings") } }
+                .onAppear { if originalLocation == nil { originalLocation=locationKey } }
+                .onDisappear { if originalLocation != locationKey { model.saveSettings() } }
         }.tint(.white).presentationDragIndicator(.visible)
     }
 }

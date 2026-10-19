@@ -2,6 +2,21 @@ import XCTest
 @testable import PloitSatellite
 
 final class AimTests: XCTestCase {
+    func testGlobeDragLocksAxisAndUsesGestureStartPose() {
+        var camera=GlobeCamera(yaw:179,pitch:35,zoom:1.2),drag=GlobeDrag()
+        drag.begin(camera)
+        camera=drag.update(x:100,y:12,width:400)
+        XCTAssertEqual(camera.pitch,35); XCTAssertEqual(camera.yaw,134)
+        // Total gesture displacement must not be accumulated again on every event.
+        camera=drag.update(x:100,y:100,width:400)
+        XCTAssertEqual(camera.pitch,35); XCTAssertEqual(camera.yaw,134)
+        drag.begin(camera)
+        camera=drag.update(x:8,y:-50,width:400)
+        XCTAssertEqual(camera.yaw,134); XCTAssertEqual(camera.pitch,12.5)
+        XCTAssertEqual(camera.zoom,1.2)
+        drag.begin(camera)
+        XCTAssertEqual(drag.update(x:1,y:1,width:400).yaw,134)
+    }
     func testRearReticleCentersAlignedTargetIncludingZenith() {
         for (az,el) in [(135.0,45.0),(0,90),(359,0)] {
             let basis=AimMath.pose(azimuth:az,elevation:el,aiming:.back)

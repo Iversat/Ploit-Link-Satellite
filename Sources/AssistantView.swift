@@ -21,8 +21,6 @@ struct SatelliteGlyph: View {
 struct AssistantView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sheet: Sheet?
-    enum Sheet: String, Identifiable { case satellites, passes, settings; var id: String { rawValue } }
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -33,7 +31,7 @@ struct AssistantView: View {
                 }
                 if model.pointing { PointingView() } else {
                     VStack(spacing: 0) {
-                        header
+                        AssistantHeader { model.homePanel = .settings }
                         Spacer(minLength: 40)
                         Circle().fill(.white.opacity(0.45)).frame(width: 12,height: 12)
                             .overlay(Circle().stroke(.white,lineWidth: 3).frame(width: 19,height: 19))
@@ -56,8 +54,8 @@ struct AssistantView: View {
                                 }
                             }.buttonStyle(.plain).accessibilityIdentifier("startPointing")
                             HStack(spacing: 12) {
-                                smallButton("Спутники",icon:"globe.europe.africa.fill") { sheet = .satellites }
-                                smallButton("Пролёты",icon:"clock.arrow.circlepath") { sheet = .passes }
+                                smallButton("Спутники",icon:"globe.europe.africa.fill") { model.homePanel = .satellites }
+                                smallButton("Пролёты",icon:"clock.arrow.circlepath") { model.homePanel = .passes }
                                 smallButton("Орбиты",icon:"globe") { model.orbitPresented = true }
                             }
                         }
@@ -75,25 +73,14 @@ struct AssistantView: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.35),value: model.pointing)
         }
-        .sheet(item: $sheet) { item in
+        .sheet(item: $model.homePanel) { item in
             switch item {
             case .satellites: SatellitePicker().environmentObject(model)
             case .passes: PassesView().environmentObject(model)
             case .settings: SettingsView().environmentObject(model)
             }
         }
-        .sheet(isPresented:$model.cataloguePresented) { SatellitePicker().environmentObject(model) }
         .fullScreenCover(isPresented:$model.orbitPresented) { OrbitExplorerView(isPresented:$model.orbitPresented).environmentObject(model) }
-    }
-    private var header: some View {
-        HStack {
-            HStack(spacing: 9) {
-                SatelliteGlyph().foregroundStyle(.black).padding(4).frame(width:30,height:30).background(.white.opacity(0.85),in:RoundedRectangle(cornerRadius:8))
-                Text("Ploit Space").font(.system(size: 22,weight: .semibold))
-            }
-            Spacer(minLength: 6)
-            Button { sheet = .settings } label: { Image(systemName: "ellipsis").font(.system(size: 18,weight: .bold)).frame(width: 44,height: 44).satelliteGlass(in: Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Настройки")
-        }.padding(.horizontal,24).padding(.top,14)
     }
     private var status: some View {
         GlassPanel {
@@ -133,3 +120,24 @@ struct PointingView: View {
     var body: some View { PointingContent(model:model,sensors:model.sensors) }
 }
 
+
+// This control has its own fixed hit area; orbit/location updates do not own presentation.
+private struct AssistantHeader: View {
+    var openSettings: () -> Void
+    var body: some View {
+        HStack {
+            HStack(spacing:9) {
+                SatelliteGlyph().foregroundStyle(.black).padding(4).frame(width:30,height:30)
+                    .background(.white.opacity(0.85),in:RoundedRectangle(cornerRadius:8))
+                Text("Ploit Space").font(.system(size:22,weight:.semibold))
+            }
+            Spacer(minLength:6)
+            Button(action:openSettings) {
+                Image(systemName:"ellipsis").font(.system(size:18,weight:.bold))
+                    .frame(width:52,height:52).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .background { Circle().fill(.clear).satelliteGlass(in:Circle()).allowsHitTesting(false) }
+                .accessibilityLabel("Настройки").accessibilityIdentifier("openSettings")
+        }.padding(.horizontal,24).padding(.top,14)
+    }
+}

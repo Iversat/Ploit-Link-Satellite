@@ -218,7 +218,7 @@ struct OrbitExplorerView: View {
                 Button { playback.showGround.toggle() } label: { Text(playback.showGround ? "Трасса":"Орбита").font(.system(size:13,weight:.medium)) }.accessibilityIdentifier("toggleGroundTrack")
                 Button { playback.now() } label: { Text("Сейчас").font(.system(size:13,weight:.semibold)).padding(.horizontal,14).frame(height:34).background(.white.opacity(0.12),in:Capsule()) }.accessibilityIdentifier("orbitNow")
             }.buttonStyle(.plain)
-            Text("Вращайте одним пальцем · масштаб двумя. Окно видимости по TLE, время местное.")
+            Text("Влево/вправо — вращение вокруг оси. Вверх/вниз — наклон. Двумя пальцами — масштаб.")
                 .font(.system(size:10)).foregroundStyle(.white.opacity(0.4)).fixedSize(horizontal:false,vertical:true)
         }.padding(compact ? 16:20).satelliteGlass(in:RoundedRectangle(cornerRadius:28,style:.continuous),clear:true)
             .padding(.horizontal,16).foregroundStyle(.white)

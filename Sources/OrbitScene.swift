@@ -41,7 +41,10 @@ struct OrbitScene: UIViewRepresentable {
         camera.position=SCNVector3(0,0,4.0); camera.camera?.fieldOfView=43
         camera.camera?.projectionDirection = .vertical
         camera.camera?.zNear=0.01; camera.camera?.zFar=100
-        camera.look(at:SCNVector3Zero); root.addChildNode(camera)
+        // Fixed turntable hierarchy. Never derive "up" from the previous camera pose.
+        let yaw=SCNNode(); yaw.name="longitudePivot"
+        let pitch=SCNNode(); pitch.name="latitudePivot"
+        root.addChildNode(yaw); yaw.addChildNode(pitch); pitch.addChildNode(camera)
         let stars=(0..<350).map { i -> SCNVector3 in
             let y=1-2*Double(i)/350,angle=Double(i)*2.3999632297,r=sqrt(1-y*y)
             return SCNVector3(Float(25*r*cos(angle)),Float(25*y),Float(25*r*sin(angle)))
@@ -140,15 +143,17 @@ struct OrbitScene: UIViewRepresentable {
         var pathKeys: [Int:String]=[:]
         weak var view: SCNView?
         var camera=GlobeCamera()
+        var drag=GlobeDrag()
         func applyCamera() {
             guard let view, let node=view.pointOfView,view.bounds.width>0,view.bounds.height>0 else { return }
             let halfVertical=43.0 * Double.pi/360
             let halfHorizontal=atan(tan(halfVertical)*Double(view.bounds.width/view.bounds.height))
             let distance=1.22/sin(min(halfVertical,halfHorizontal))/camera.zoom
-            let p=camera.unitPosition
             SCNTransaction.begin(); SCNTransaction.disableActions=true
-            node.position=SCNVector3(Float(p.x*distance),Float(p.y*distance),Float(p.z*distance))
-            node.look(at:SCNVector3Zero)
+            node.parent?.parent?.eulerAngles=SCNVector3(0,Float(camera.yaw * .pi/180),0)
+            node.parent?.eulerAngles=SCNVector3(Float(-camera.pitch * .pi/180),0,0)
+            node.eulerAngles=SCNVector3Zero
+            node.position=SCNVector3(0,0,Float(distance))
             SCNTransaction.commit()
             #if DEBUG
             view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0",camera.yaw,camera.pitch,camera.zoom)
@@ -156,9 +161,10 @@ struct OrbitScene: UIViewRepresentable {
         }
         @objc func pan(_ gesture: UIPanGestureRecognizer) {
             guard let view else { return }
+            if gesture.state == .began { drag.begin(camera) }
             let delta=gesture.translation(in:view)
-            camera.drag(x:Double(delta.x),y:Double(delta.y),width:Double(view.bounds.width))
-            gesture.setTranslation(.zero,in:view); applyCamera()
+            camera=drag.update(x:Double(delta.x),y:Double(delta.y),width:Double(view.bounds.width))
+            applyCamera()
         }
         @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
             camera.magnify(Double(gesture.scale)); gesture.scale=1; applyCamera()

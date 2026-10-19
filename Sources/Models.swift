@@ -215,6 +215,18 @@ struct GlobeCamera {
     }
 }
 
+struct GlobeDrag {
+    private var start=GlobeCamera()
+    private var horizontal: Bool?
+    mutating func begin(_ camera: GlobeCamera) { start=camera; horizontal=nil }
+    mutating func update(x: Double, y: Double, width: Double) -> GlobeCamera {
+        if horizontal == nil, hypot(x,y)>=6 { horizontal=abs(x)>=abs(y) }
+        var result=start
+        if let horizontal { result.drag(x:horizontal ? x:0,y:horizontal ? 0:y,width:width) }
+        return result
+    }
+}
+
 enum AimMath {
     static func wrap(_ degrees: Double) -> Double { ((degrees + 180).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) - 180 }
     static func separation(az1: Double, el1: Double, az2: Double, el2: Double) -> Double {

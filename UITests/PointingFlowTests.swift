@@ -1,6 +1,22 @@
 import XCTest
 
 final class PointingFlowTests: XCTestCase {
+    func testSettingsOpensRepeatedlyDuringLiveUpdatesFromButtonEdges() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()
+        let open=app.buttons["openSettings"]
+        XCTAssertTrue(open.waitForExistence(timeout:10))
+        for i in 0..<4 {
+            open.coordinate(withNormalizedOffset:CGVector(dx:i%2 == 0 ? 0.12:0.88,dy:0.5)).tap()
+            XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout:2))
+            app.buttons["closeSettings"].tap()
+            XCTAssertTrue(open.waitForExistence(timeout:2)); XCTAssertTrue(open.isHittable)
+        }
+        app.buttons["openSatellites"].tap()
+        XCTAssertTrue(app.navigationBars["Спутники"].waitForExistence(timeout:3))
+        app.buttons["Готово"].tap()
+        open.tap()
+        XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout:2))
+    }
     override func setUpWithError() throws { continueAfterFailure = false }
     func testAxisSwitchChangesPhysicalDirection() {
         let app = XCUIApplication()
@@ -50,8 +66,18 @@ final class PointingFlowTests: XCTestCase {
         let scene=app.otherElements["orbitScene"]
         XCTAssertTrue(scene.waitForExistence(timeout:5))
         let before=scene.value as? String
+        func component(_ key: String) -> String? {
+            let parts=(scene.value as? String ?? "").split(separator:" ").map(String.init)
+            guard let index=parts.firstIndex(of:key),index+1<parts.count else { return nil }
+            return parts[index+1]
+        }
+        let oldPitch=component("pitch")
         scene.swipeLeft()
         XCTAssertNotEqual(scene.value as? String,before)
+        XCTAssertEqual(component("pitch"),oldPitch)
+        let oldYaw=component("yaw")
+        scene.swipeUp()
+        XCTAssertEqual(component("yaw"),oldYaw)
         XCTAssertTrue((scene.value as? String ?? "").contains("center 0 0"))
         scene.pinch(withScale:1.2,velocity:1)
         XCTAssertTrue(app.buttons["closeOrbits"].isHittable)

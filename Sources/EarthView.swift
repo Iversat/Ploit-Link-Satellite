@@ -4,6 +4,8 @@ import SceneKit
 struct EarthView: UIViewRepresentable {
     var latitude: Double = 35
     var longitude: Double = 35
+    final class Coordinator { var latitude: Double?; var longitude: Double? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.backgroundColor = .black
@@ -59,6 +61,10 @@ struct EarthView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: SCNView, context: Context) {
+        let previous=context.coordinator
+        if let lat=previous.latitude, let lon=previous.longitude,
+           abs(lat-latitude)<0.01, abs(AimMath.wrap(lon-longitude))<0.01 { return }
+        previous.latitude=latitude; previous.longitude=longitude
         guard let node = uiView.scene?.rootNode.childNode(withName: "earth", recursively: false) else { return }
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 1.2
