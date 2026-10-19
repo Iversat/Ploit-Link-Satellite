@@ -26,7 +26,10 @@ import Combine
     func configure(elements: [Int:Elements], selectedID: Int, initialDate: Date?) {
         self.selectedID=selectedID; anchor=Date(); date=initialDate ?? anchor
         live=initialDate == nil; previousWall=Date()
+        states=[:]; focus+=1
         updateElements(elements)
+        // The date can change while the TLE set stays identical (opening a pass).
+        calculate()
     }
     func updateElements(_ values: [Int:Elements]) {
         guard values != revision else { return }
@@ -35,7 +38,7 @@ import Combine
     }
     func scrub(_ offset: Double) {
         live=false; playing=false
-        date=anchor.addingTimeInterval(min(48*3600,max(-6*3600,offset))); calculate()
+        date=anchor.addingTimeInterval(min(48*3600,max(-6*3600,offset))); states=[:]; calculate()
     }
     func jump(to date: Date) { scrub(date.timeIntervalSince(anchor)) }
     func now() { live=true; playing=false; anchor=Date(); date=anchor; calculate() }

@@ -131,4 +131,19 @@ final class AimTests: XCTestCase {
         XCTAssertEqual(future.azimuth,expected.azimuth,accuracy:0.000001)
         model.deactivate()
     }
+    @MainActor func testOpeningForecastRecomputesCoordinatesWithSameElements() async throws {
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        let tle=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        let date=try XCTUnwrap(tle.epoch),playback=OrbitPlayback(),engine=OrbitEngine()
+        playback.configure(elements:[tle.norad:tle],selectedID:tle.norad,initialDate:date)
+        for _ in 0..<30 { if playback.states[tle.norad] != nil { break }; try await Task.sleep(nanoseconds:50_000_000) }
+        XCTAssertNotNil(playback.states[tle.norad])
+        let future=date.addingTimeInterval(3600)
+        playback.configure(elements:[tle.norad:tle],selectedID:tle.norad,initialDate:future)
+        for _ in 0..<30 { if playback.states[tle.norad] != nil { break }; try await Task.sleep(nanoseconds:50_000_000) }
+        let actual=try XCTUnwrap(playback.states[tle.norad]),expected=try await engine.state(elements:tle,date:future)
+        XCTAssertEqual(actual.latitude,expected.latitude,accuracy:0.000001)
+        XCTAssertEqual(actual.longitude,expected.longitude,accuracy:0.000001)
+        XCTAssertFalse(playback.live); playback.stop()
+    }
 }

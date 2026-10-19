@@ -46,8 +46,12 @@ final class PointingFlowTests: XCTestCase {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-orbits"]; app.launch()
         let timeline=app.sliders["orbitTimeline"]
         XCTAssertTrue(timeline.waitForExistence(timeout:15))
-        XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
+        let coordinates=app.descendants(matching:.any)["orbitCoordinates"]
+        XCTAssertTrue(coordinates.waitForExistence(timeout:15))
+        let oldCoordinates=coordinates.label
         timeline.adjust(toNormalizedSliderPosition:0.25)
+        expectation(for:NSPredicate(format:"label != %@",oldCoordinates),evaluatedWith:coordinates)
+        waitForExpectations(timeout:5)
         let mode=app.descendants(matching:.any)["orbitTimeMode"]
         XCTAssertTrue(mode.label.contains("ПРОГНОЗ"))
         XCTAssertTrue(app.buttons["jumpToSession"].waitForExistence(timeout:5))
