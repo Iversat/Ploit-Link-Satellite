@@ -85,7 +85,7 @@ struct PassWindow: Codable, Identifiable {
     var id: Double { rise }
     var riseDate: Date { Date(timeIntervalSince1970: rise) }
     var setDate: Date { Date(timeIntervalSince1970: set) }
-    var duration: TimeInterval { set-rise }
+    var duration: TimeInterval { self.set - rise }
     func contains(_ date: Date) -> Bool { riseDate <= date && date < setDate }
 }
 

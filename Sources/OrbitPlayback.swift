@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @MainActor final class OrbitPlayback: ObservableObject {
     @Published var selectedID = 25544
@@ -53,7 +54,7 @@ import SwiftUI
     }
     func calculate() {
         calculation?.cancel()
-        let token=UUID(),date=date,ids=visibleIDs
+        let token=UUID(),date=self.date,ids=visibleIDs
         requestID=token
         // Do not present a previous instant's marker after a scrub.
         calculation=Task {
