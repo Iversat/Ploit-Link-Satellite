@@ -12,7 +12,13 @@ import CoreMotion
     @Published var northIsTrue = false
     @Published var message = "Разрешите геопозицию и движение"
     @Published var denied = false
-    var axis: AimAxis = .top
+    var axis: AimAxis = .top {
+        didSet {
+            guard oldValue != axis else { return }
+            if let basis = lastBasis { apply(basis) } else { motionReady = false }
+        }
+    }
+    private var lastBasis: DeviceBasis?
     private let location = CLLocationManager()
     private let motion = CMMotionManager()
     private var active = false
@@ -54,19 +60,30 @@ import CoreMotion
             guard let self else { return }
             guard let value else { self.message = error?.localizedDescription ?? "Датчики недоступны"; self.motionReady = false; return }
             let r = value.attitude.rotationMatrix
-            let v = self.axis == .top ? AimMath.direction(north: r.m21, west: r.m22, up: r.m23) : AimMath.direction(north: -r.m31, west: -r.m32, up: -r.m33)
-            self.azimuth = v.az
-            self.elevation = v.el
-            self.motionReady = true
+            self.apply(.init(x:.init(north:r.m11,west:r.m12,up:r.m13),y:.init(north:r.m21,west:r.m22,up:r.m23),z:.init(north:r.m31,west:r.m32,up:r.m33)))
             self.message = self.northIsTrue ? "Истинный север" : "Магнитный север · точность ограничена"
         }
     }
+    private func apply(_ basis: DeviceBasis) {
+        lastBasis = basis
+        let v = AimMath.direction(axis:axis,basis:basis)
+        azimuth = v.az; elevation = v.el; motionReady = true
+    }
+    #if DEBUG
+    func preview(azimuth: Double, elevation: Double, axis: AimAxis) {
+        self.axis = axis
+        northIsTrue = true; headingAccuracy = 5
+        message = "Учебная ориентация симулятора"
+        apply(AimMath.pose(azimuth:azimuth,elevation:elevation,aiming:axis))
+    }
+    #endif
     func stop() {
         active = false
         location.stopUpdatingLocation()
         location.stopUpdatingHeading()
         motion.stopDeviceMotionUpdates()
         motionReady = false
+        lastBasis = nil
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) { resumeLocation() }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {

@@ -16,7 +16,13 @@ import SwiftUI
     @Published var manualLat = UserDefaults.standard.string(forKey: "manualLat") ?? ""
     @Published var manualLon = UserDefaults.standard.string(forKey: "manualLon") ?? ""
     @Published var minElevation: Double = 10
-    @Published var axis: AimAxis = .top
+    @Published var axis: AimAxis = AimAxis(rawValue:UserDefaults.standard.string(forKey:"aimAxis") ?? "") ?? .top {
+        didSet { sensors.axis = axis; UserDefaults.standard.set(axis.rawValue,forKey:"aimAxis") }
+    }
+    @Published var pointingStyle: PointingStyle = PointingStyle(rawValue:UserDefaults.standard.string(forKey:"pointingStyle") ?? "") ?? .radar {
+        didSet { UserDefaults.standard.set(pointingStyle.rawValue,forKey:"pointingStyle") }
+    }
+    @Published var pointingIntro = false
     let sensors = Sensors()
     private let engine = OrbitEngine()
     private let store = ElementStore()
@@ -62,11 +68,15 @@ import SwiftUI
         activated = true
         #if DEBUG
         if NSClassFromString("XCTestCase") != nil { return }
-        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home") || ProcessInfo.processInfo.arguments.contains("--ui-screenshot-pointing") {
+        if let preview = ProcessInfo.processInfo.arguments.first(where:{$0.hasPrefix("--ui-screenshot-")}) {
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
-            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-pointing") {
-                training = true; pointing = true; sensors.motionReady = true; sensors.northIsTrue = true
-                sensors.headingAccuracy = 5; sensors.azimuth = 119; sensors.elevation = 38
+            if preview != "--ui-screenshot-home" {
+                training = true; pointing = true
+                axis = preview.contains("back") ? .back : .top
+                pointingStyle = preview.contains("earth") ? .earth : .radar
+                let seeking = preview.contains("seeking") || preview == "--ui-screenshot-pointing"
+                sensors.preview(azimuth:seeking ? 95 : 135,elevation:seeking ? 25 : 45,axis:axis)
+                pointingIntro = preview.contains("intro")
             }
             Task { await select(id: selectedID) }
             return
@@ -140,5 +150,5 @@ import SwiftUI
         Task { await tick() }
     }
     func enterPointing(training: Bool = false) { self.training = training; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
-    func leavePointing() { pointing = false; training = false; UIApplication.shared.isIdleTimerDisabled = false }
+    func leavePointing() { pointing = false; training = false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }
 }

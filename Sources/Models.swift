@@ -90,7 +90,32 @@ struct PassWindow: Codable, Identifiable {
 enum AimAxis: String, CaseIterable, Identifiable {
     case top, back
     var id: String { rawValue }
-    var title: String { self == .top ? "Верхний торец" : "Задняя сторона" }
+    var title: String { self == .top ? "Верхняя грань" : "Заднее стекло" }
+    var instruction: String { self == .top ? "Направьте верхнюю грань iPhone на спутник" : "Направьте заднее стекло iPhone на спутник" }
+}
+
+enum PointingStyle: String, CaseIterable, Identifiable {
+    case radar, earth
+    var id: String { rawValue }
+    var title: String { self == .radar ? "Круг" : "Земля" }
+}
+
+struct DirectionVector: Equatable {
+    var north: Double
+    var west: Double
+    var up: Double
+    var negative: DirectionVector { .init(north:-north,west:-west,up:-up) }
+    func cross(_ b: DirectionVector) -> DirectionVector {
+        .init(north:west*b.up-up*b.west,west:up*b.north-north*b.up,up:north*b.west-west*b.north)
+    }
+    func dot(_ b: DirectionVector) -> Double { north*b.north + west*b.west + up*b.up }
+}
+
+struct DeviceBasis {
+    var x: DirectionVector
+    var y: DirectionVector
+    var z: DirectionVector
+    func vector(for axis: AimAxis) -> DirectionVector { axis == .top ? y : z.negative }
 }
 
 enum AimMath {
@@ -105,5 +130,19 @@ enum AimMath {
     static func direction(north: Double, west: Double, up: Double) -> (az: Double, el: Double) {
         let az = atan2(-west, north) * 180 / .pi
         return ((az + 360).truncatingRemainder(dividingBy: 360), atan2(up, hypot(north, west)) * 180 / .pi)
+    }
+    static func direction(axis: AimAxis, basis: DeviceBasis) -> (az: Double, el: Double) {
+        let v = basis.vector(for:axis)
+        return direction(north:v.north,west:v.west,up:v.up)
+    }
+    // A complete orthonormal pose, used by deterministic simulator previews/tests.
+    // Switching axes reprojects this same pose; it never reuses the old direction.
+    static func pose(azimuth: Double, elevation: Double, aiming axis: AimAxis) -> DeviceBasis {
+        let az = azimuth * .pi / 180, el = elevation * .pi / 180
+        let target = DirectionVector(north:cos(el)*cos(az),west:-cos(el)*sin(az),up:sin(el))
+        let side = DirectionVector(north:sin(az),west:cos(az),up:0)
+        if axis == .top { return .init(x:side,y:target,z:side.cross(target)) }
+        let z = target.negative
+        return .init(x:side.cross(z),y:side,z:z)
     }
 }

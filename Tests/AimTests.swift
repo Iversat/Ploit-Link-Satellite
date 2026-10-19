@@ -2,6 +2,47 @@ import XCTest
 @testable import PloitSatellite
 
 final class AimTests: XCTestCase {
+    func testKnownFlatPhoneAxes() {
+        let basis = DeviceBasis(x:.init(north:0,west:-1,up:0),y:.init(north:1,west:0,up:0),z:.init(north:0,west:0,up:1))
+        let top = AimMath.direction(axis:.top,basis:basis)
+        let back = AimMath.direction(axis:.back,basis:basis)
+        XCTAssertEqual(top.az,0,accuracy:0.000001)
+        XCTAssertEqual(top.el,0,accuracy:0.000001)
+        XCTAssertEqual(back.el,-90,accuracy:0.000001)
+    }
+    func testTwoPhysicalAxesStayOrthogonal() {
+        for axis in AimAxis.allCases {
+            for (az,el) in [(0.0,0.0),(135.0,45.0),(359.0,75.0),(180.0,-20.0)] {
+                let basis = AimMath.pose(azimuth:az,elevation:el,aiming:axis)
+                XCTAssertEqual(basis.x.dot(basis.y),0,accuracy:0.000001)
+                XCTAssertEqual(basis.y.dot(basis.z),0,accuracy:0.000001)
+                XCTAssertEqual(basis.x.cross(basis.y).dot(basis.z),1,accuracy:0.000001)
+                let selected = AimMath.direction(axis:axis,basis:basis)
+                XCTAssertEqual(AimMath.separation(az1:az,el1:el,az2:selected.az,el2:selected.el),0,accuracy:0.00001)
+                let a = AimMath.direction(axis:.top,basis:basis), b = AimMath.direction(axis:.back,basis:basis)
+                XCTAssertEqual(AimMath.separation(az1:a.az,el1:a.el,az2:b.az,el2:b.el),90,accuracy:0.000001)
+            }
+        }
+    }
+    func testBackUsesOutwardNegativeScreenZ() {
+        let basis = AimMath.pose(azimuth:270,elevation:30,aiming:.back)
+        let outward = basis.vector(for:.back)
+        XCTAssertEqual(outward.dot(basis.z),-1,accuracy:0.000001)
+        let direction = AimMath.direction(axis:.back,basis:basis)
+        XCTAssertEqual(direction.az,270,accuracy:0.000001)
+        XCTAssertEqual(direction.el,30,accuracy:0.000001)
+    }
+    @MainActor func testSwitchingAxisImmediatelyReprojectsSamePose() {
+        let sensors = Sensors()
+        sensors.preview(azimuth:135,elevation:45,axis:.top)
+        let oldAz = sensors.azimuth, oldEl = sensors.elevation
+        sensors.axis = .back
+        XCTAssertTrue(sensors.motionReady)
+        XCTAssertEqual(AimMath.separation(az1:oldAz,el1:oldEl,az2:sensors.azimuth,el2:sensors.elevation),90,accuracy:0.000001)
+        sensors.axis = .top
+        XCTAssertEqual(sensors.azimuth,135,accuracy:0.000001)
+        XCTAssertEqual(sensors.elevation,45,accuracy:0.000001)
+    }
     func testAngularWrapAcrossNorth() {
         XCTAssertEqual(AimMath.wrap(1 - 359),2,accuracy:0.000001)
         XCTAssertEqual(AimMath.wrap(359 - 1),-2,accuracy:0.000001)

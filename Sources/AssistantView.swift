@@ -35,9 +35,10 @@ struct AssistantView: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black.ignoresSafeArea()
-                EarthView(latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35)
-                    .ignoresSafeArea()
-                LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
+                if !model.pointing || model.pointingStyle == .earth {
+                    EarthView(latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
+                    LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
+                }
                 if model.pointing { PointingView() } else {
                     VStack(spacing: 0) {
                         header
@@ -135,83 +136,3 @@ struct PointingView: View {
     var body: some View { PointingContent(model:model,sensors:model.sensors) }
 }
 
-struct PointingContent: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var sensors: Sensors
-    @State private var lastAligned = false
-    private var dx: Double { guard let t = model.target else { return 0 }; return AimMath.wrap(t.az - sensors.azimuth) }
-    private var dy: Double { guard let t = model.target else { return 0 }; return t.el - sensors.elevation }
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { model.leavePointing() } label: { Image(systemName:"chevron.left").font(.system(size:18,weight:.semibold)).frame(width:44,height:44).background(.ultraThinMaterial,in:Circle()) }.accessibilityLabel("Назад")
-                Spacer()
-                VStack(spacing:3) { Text(model.training ? "Тренировка наведения" : model.satellite?.name ?? "Спутник").font(.system(size:17,weight:.semibold)); Text(model.training ? "УСЛОВНАЯ ЦЕЛЬ · 135° / 45°" : model.mode?.name ?? "").font(.system(size:10,weight:.medium)).tracking(1.2).foregroundStyle(.white.opacity(0.5)) }
-                Spacer()
-                SatelliteGlyph().frame(width:24,height:24).frame(width:44,height:44).foregroundStyle(.white.opacity(0.7))
-            }.padding(.horizontal,22).padding(.top,12)
-            Spacer(minLength:20)
-            VStack(spacing:10) {
-                Text(instruction).font(.system(size:30,weight:.semibold)).multilineTextAlignment(.center).contentTransition(.numericText())
-                Text(subtitle).font(.system(size:15)).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center)
-            }.padding(.horizontal,28)
-            Spacer(minLength:20)
-            ZStack {
-                Circle().stroke(.white.opacity(0.1),lineWidth:1).frame(width:262,height:262)
-                Circle().trim(from:0.06,to:0.44).stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:5,lineCap:.round)).frame(width:262,height:262).rotationEffect(.degrees(180))
-                Circle().trim(from:0.06,to:0.44).stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:5,lineCap:.round)).frame(width:262,height:262)
-                Circle().stroke(.white.opacity(0.15),style:StrokeStyle(lineWidth:1,dash:[2,7])).frame(width:205,height:205)
-                Path { p in p.move(to:CGPoint(x:137,y:102));p.addLine(to:CGPoint(x:137,y:172));p.move(to:CGPoint(x:102,y:137));p.addLine(to:CGPoint(x:172,y:137)) }.stroke(.white.opacity(0.2),lineWidth:1)
-                Image(systemName:"iphone").font(.system(size:62,weight:.ultraLight)).rotationEffect(.degrees(-12)).foregroundStyle(.white.opacity(0.65))
-                if model.target != nil && sensors.motionReady {
-                    Circle().fill(model.aligned ? Color.green : .white).frame(width:24,height:24).overlay(Circle().stroke(.white.opacity(0.45),lineWidth:1).frame(width:40,height:40))
-                        .shadow(color:model.aligned ? .green.opacity(0.6) : .white.opacity(0.25),radius:16)
-                        .offset(x:max(-115,min(115,dx*2.3)),y:max(-115,min(115,-dy*2.3)))
-                }
-                Image(systemName:dx>=0 ? "arrow.turn.up.right" : "arrow.turn.up.left").font(.system(size:20,weight:.medium)).offset(x:dx>=0 ? 118 : -118,y:-104).opacity(abs(dx)>8 && model.target != nil ? 1 : 0)
-            }.frame(width:274,height:274).animation(.linear(duration:0.1),value:dx).animation(.linear(duration:0.1),value:dy)
-            Spacer(minLength:20)
-            VStack(spacing:12) {
-                GlassPanel {
-                    HStack {
-                        metric("АЗИМУТ",value:model.target.map { "\(Int($0.az))°" } ?? "—")
-                        Spacer(); Rectangle().fill(.white.opacity(0.15)).frame(width:1,height:35); Spacer()
-                        metric("УГОЛ МЕСТА",value:model.target.map { "\(Int($0.el))°" } ?? "—")
-                        Spacer(); Rectangle().fill(.white.opacity(0.15)).frame(width:1,height:35); Spacer()
-                        metric("ОШИБКА",value:model.angularError.map { "\(Int($0))°" } ?? "—")
-                    }
-                }
-                GlassPanel {
-                    HStack(alignment:.top,spacing:10) {
-                        Image(systemName:model.aligned ? "checkmark.circle.fill" : "info.circle").foregroundStyle(model.aligned ? .green : .white.opacity(0.6))
-                        Text(footer).font(.system(size:12)).foregroundStyle(.white.opacity(0.6)).fixedSize(horizontal:false,vertical:true)
-                    }
-                }
-            }.padding(.horizontal,22)
-            Spacer().frame(height:24)
-        }
-        .background(.black.opacity(0.38))
-        .onChange(of:model.aligned) { _, aligned in if aligned && !lastAligned { UINotificationFeedbackGenerator().notificationOccurred(.success) };lastAligned=aligned }
-    }
-    private var instruction: String {
-        if !sensors.motionReady { return "Подготовьте телефон" }
-        if model.target == nil { return "Нужны данные орбиты" }
-        if !model.training && !model.aboveHorizon { return "Спутник за горизонтом" }
-        if model.aligned { return "Держите направление" }
-        if abs(dx)>10 { return dx>0 ? "Поверните вправо" : "Поверните влево" }
-        return dy>0 ? "Поднимите телефон" : "Опустите телефон"
-    }
-    private var subtitle: String {
-        if !sensors.motionReady { return sensors.message }
-        if !model.training && !model.aboveHorizon { return "Дождитесь следующего пролёта" }
-        return model.axis == .top ? "Направьте верхний торец на спутник" : "Направьте заднюю сторону на спутник"
-    }
-    private var footer: String {
-        if model.training { return "Учебная цель. Совпадение направления не означает спутниковое соединение." }
-        if model.observer == nil { return "Нет положения наблюдателя. Разрешите геопозицию или задайте координаты." }
-        if !sensors.northIsTrue { return "Используется магнитный север. Для точного наведения нужен истинный север и калибровка компаса." }
-        if sensors.headingAccuracy < 0 || sensors.headingAccuracy>20 { return "Компас неточен. Уберите магниты и металлические предметы, откалибруйте телефон движением восьмёркой." }
-        return "Это направление по орбите. Для связи нужен внешний радиомодуль; наличие сигнала здесь не измеряется."
-    }
-    private func metric(_ title:String,value:String)->some View { VStack(alignment:.leading,spacing:5) { Text(title).font(.system(size:8,weight:.semibold)).tracking(1).foregroundStyle(.white.opacity(0.4));Text(value).font(.system(size:23,weight:.medium,design:.rounded)).monospacedDigit() } }
-}

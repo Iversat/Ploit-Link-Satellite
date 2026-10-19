@@ -47,13 +47,12 @@ jobs:
           xcrun simctl privacy "$DEVICE" grant location ru.ploit.satellite
           mkdir -p build/screenshots
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-          xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-home
-          sleep 5
-          xcrun simctl io "$DEVICE" screenshot build/screenshots/home.png
-          xcrun simctl terminate "$DEVICE" ru.ploit.satellite
-          xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-pointing
-          sleep 3
-          xcrun simctl io "$DEVICE" screenshot build/screenshots/pointing-training.png
+          for SCENE in home radar-top-seeking radar-top-aligned radar-back-aligned earth-back-aligned intro-top intro-back; do
+            xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+            xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
+            sleep 3
+            xcrun simctl io "$DEVICE" screenshot "build/screenshots/$SCENE.png"
+          done
       - name: Upload IPA
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
