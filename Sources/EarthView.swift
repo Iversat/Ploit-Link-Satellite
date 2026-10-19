@@ -15,15 +15,18 @@ struct EarthView: UIViewRepresentable {
         sphere.segmentCount = 128
         let material = SCNMaterial()
         material.diffuse.contents = UIImage(named: "earth-day.jpg")
-        material.diffuse.intensity = 0.20
+        material.diffuse.intensity = 0.06
         material.emission.contents = UIImage(named: "earth-night.jpg")
-        material.emission.intensity = 2.0
+        material.emission.intensity = 1.4
+        material.shaderModifiers = [.surface: "_surface.emission.rgb *= float3(1.25, 1.0, 0.45);"]
         material.lightingModel = .constant
         sphere.firstMaterial = material
         let globe = SCNNode(geometry: sphere)
         globe.name = "earth"
         // SCNSphere front samples the texture midpoint (0 deg longitude).
-        globe.eulerAngles = SCNVector3(Float(latitude * .pi / 180), Float(-longitude * .pi / 180), 0)
+        // Keep the observer toward the upper visible hemisphere, as in the reference.
+        // The camera already looks down toward the globe, so latitude is offset.
+        globe.eulerAngles = SCNVector3(Float((latitude - 50) * .pi / 180), Float(-longitude * .pi / 180), 0)
         globe.position = SCNVector3(0, -0.60, 0)
         scene.rootNode.addChildNode(globe)
         let atmosphere = SCNSphere(radius: 1.015)
@@ -43,6 +46,7 @@ struct EarthView: UIViewRepresentable {
         camera.camera?.fieldOfView = 45
         camera.camera?.projectionDirection = .vertical
         camera.camera?.wantsHDR = true
+        camera.camera?.exposureOffset = -0.6
         camera.camera?.bloomIntensity = 0.25
         camera.camera?.bloomThreshold = 0.6
         camera.camera?.bloomBlurRadius = 8
@@ -58,7 +62,7 @@ struct EarthView: UIViewRepresentable {
         guard let node = uiView.scene?.rootNode.childNode(withName: "earth", recursively: false) else { return }
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 1.2
-        node.eulerAngles = SCNVector3(Float(latitude * .pi / 180),Float(-longitude * .pi / 180),0)
+        node.eulerAngles = SCNVector3(Float((latitude - 50) * .pi / 180),Float(-longitude * .pi / 180),0)
         SCNTransaction.commit()
         uiView.setNeedsDisplay()
     }
