@@ -39,6 +39,7 @@ struct OrbitScene: UIViewRepresentable {
         let atmosphere=SCNNode(geometry:air); atmosphere.scale=globe.scale; root.addChildNode(atmosphere)
         let camera=SCNNode(); camera.name="camera"; camera.camera=SCNCamera()
         camera.position=SCNVector3(0,0,4.0); camera.camera?.fieldOfView=43
+        camera.camera?.projectionDirection = .vertical
         camera.camera?.zNear=0.01; camera.camera?.zFar=100
         camera.look(at:SCNVector3Zero); root.addChildNode(camera)
         let stars=(0..<350).map { i -> SCNVector3 in
