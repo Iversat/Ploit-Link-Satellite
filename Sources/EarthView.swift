@@ -14,15 +14,16 @@ struct EarthView: UIViewRepresentable {
         let sphere = SCNSphere(radius: 1)
         sphere.segmentCount = 128
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.black
+        material.diffuse.contents = UIImage(named: "earth-day.jpg")
+        material.diffuse.intensity = 0.20
         material.emission.contents = UIImage(named: "earth-night.jpg")
-        material.emission.intensity = 1.65
+        material.emission.intensity = 2.0
         material.lightingModel = .constant
         sphere.firstMaterial = material
         let globe = SCNNode(geometry: sphere)
         globe.name = "earth"
-        // SceneKit sphere longitude seam is at -Z; camera looks down -Z.
-        globe.eulerAngles = SCNVector3(Float(latitude * .pi / 180), Float((-longitude - 90) * .pi / 180), 0)
+        // SCNSphere front samples the texture midpoint (0 deg longitude).
+        globe.eulerAngles = SCNVector3(Float(latitude * .pi / 180), Float(-longitude * .pi / 180), 0)
         globe.position = SCNVector3(0, -0.60, 0)
         scene.rootNode.addChildNode(globe)
         let atmosphere = SCNSphere(radius: 1.015)
@@ -33,7 +34,7 @@ struct EarthView: UIViewRepresentable {
         glow.isDoubleSided = true
         glow.blendMode = .add
         glow.writesToDepthBuffer = false
-        glow.shaderModifiers = [.fragment: "float rim = pow(1.0 - abs(dot(normalize(_surface.normal), normalize(_surface.view))), 5.0); _output.color = float4(0.10,0.55,1.0,1.0) * rim * 0.65;"]
+        glow.shaderModifiers = [.fragment: "float rim = pow(1.0 - abs(dot(normalize(_surface.normal), normalize(_surface.view))), 6.0); _output.color = float4(0.10,0.55,1.0,1.0) * rim * 0.85;"]
         atmosphere.firstMaterial = glow
         let halo = SCNNode(geometry: atmosphere)
         globe.addChildNode(halo)
@@ -41,6 +42,10 @@ struct EarthView: UIViewRepresentable {
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 45
         camera.camera?.projectionDirection = .vertical
+        camera.camera?.wantsHDR = true
+        camera.camera?.bloomIntensity = 0.25
+        camera.camera?.bloomThreshold = 0.6
+        camera.camera?.bloomBlurRadius = 8
         camera.camera?.zNear = 0.01
         camera.position = SCNVector3(0,0,2.3)
         scene.rootNode.addChildNode(camera)
@@ -53,7 +58,7 @@ struct EarthView: UIViewRepresentable {
         guard let node = uiView.scene?.rootNode.childNode(withName: "earth", recursively: false) else { return }
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 1.2
-        node.eulerAngles = SCNVector3(Float(latitude * .pi / 180),Float((-longitude - 90) * .pi / 180),0)
+        node.eulerAngles = SCNVector3(Float(latitude * .pi / 180),Float(-longitude * .pi / 180),0)
         SCNTransaction.commit()
         uiView.setNeedsDisplay()
     }

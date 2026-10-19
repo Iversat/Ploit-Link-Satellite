@@ -51,6 +51,7 @@ GitHub использует свой Mac-сервер (`macos-15`). Workflow г�
 ## Источники и лицензии
 
 - NASA Black Marble 2016: https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/ ; текстура `BlackMarble_2016_01deg.jpg`, NASA Earth Observatory. NASA не поддерживает и не одобряет этот проект.
+- NASA Blue Marble Next Generation, October 2004: https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography-bathymetry/ ; NASA / Reto Stöckli, Robert Simmon. Дневная подложка и ночные огни смешиваются только для оформления, это не карта текущего освещения Земли.
 - satellite.js 6.0.1, MIT: https://github.com/shashwatak/satellite-js ; лицензия включена в ресурсы.
 - SGP4 verification: Vallado et al., Revisiting Spacetrack Report #3, https://celestrak.org/publications/AIAA/2006-6753/ .
 - CelesTrak GP: https://celestrak.org/NORAD/documentation/gp-data-formats.php .
