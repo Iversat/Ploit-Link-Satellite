@@ -57,7 +57,18 @@ function passesJSON(ms,lat,lon,alt,mask) {
   }
   function cross(a,b,rising){for(var k=0;k<16 && b-a>250;k++){var m=(a+b)/2;if((el(m)>=mask)===rising)b=m;else a=m;}return(a+b)/2;}
   var prev=el(ms);
-  if(prev>=mask) active={rise:ms/1000,culmination:ms/1000,maxElevation:prev,inProgress:true};
+  if(prev>=mask) {
+    // Recover AOS and an earlier culmination when opening during a LEO pass.
+    var rise=ms;
+    for(var back=ms-step;back>=ms-3*3600000;back-=step) {
+      if(el(back)<mask) {rise=cross(back,back+step,true);break;}
+    }
+    active={rise:rise/1000,culmination:ms/1000,maxElevation:prev,inProgress:true};
+    for(var past=rise;past<ms;past+=step) {
+      var pastEl=el(past);
+      if(pastEl>active.maxElevation){active.maxElevation=pastEl;active.culmination=past/1000;}
+    }
+  }
   for(var t=ms+step;t<=end;t+=step){
     var elevation=el(t);
     if(!active&&prev<mask&&elevation>=mask){active={rise:cross(t-step,t,true)/1000,culmination:t/1000,maxElevation:elevation,inProgress:false};}

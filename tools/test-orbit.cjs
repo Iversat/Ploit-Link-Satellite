@@ -29,6 +29,13 @@ for(const s of seeds){
     if(!p.inProgress) assert(Math.abs(ctx.lookAt(p.rise*1000,48.708,44.513,100).elevation-10)<0.08);
     assert(Math.abs(ctx.lookAt(p.set*1000,48.708,44.513,100).elevation-10)<0.08);
   }
+  if(passes.length) {
+    const pass=passes[0],mid=(pass.rise+pass.set)/2*1000;
+    const ongoing=JSON.parse(ctx.passesJSON(mid,48.708,44.513,100,10))[0];
+    assert(ongoing.inProgress);
+    assert(Math.abs(ongoing.rise-pass.rise)<0.5);
+    assert(Math.abs(ongoing.set-pass.set)<0.5);
+  }
   console.log(`${s.norad}: valid TLE, moving 3D state/trajectory, Doppler derivative, ${passes.length} verified windows`);count++;
 }
 assert(count>=3);
