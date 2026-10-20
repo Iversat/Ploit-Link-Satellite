@@ -4,6 +4,14 @@ import SceneKit
 struct EarthView: UIViewRepresentable {
     var latitude: Double = 35
     var longitude: Double = 35
+    private var lightingDate: Date {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home-night") {
+            return ISO8601DateFormatter().date(from:"2026-10-21T00:00:00Z")!
+        }
+        #endif
+        return Date()
+    }
     final class Coordinator: NSObject {
         var latitude: Double?; var longitude: Double?
     }
@@ -25,7 +33,7 @@ struct EarthView: UIViewRepresentable {
         let globe = SCNNode(geometry: sphere)
         globe.name = "earth"
         // SCNSphere front samples the texture midpoint (0 deg longitude).
-        // Keep the observer toward the upper visible hemisphere, as in the reference.
+        // Keep the observer toward the upper visible hemisphere.
         // The camera already looks down toward the globe, so latitude is offset.
         globe.eulerAngles = SCNVector3(Float((latitude - 50) * .pi / 180), Float(-longitude * .pi / 180), 0)
         globe.position = SCNVector3(0, -0.60, 0)
@@ -43,7 +51,7 @@ struct EarthView: UIViewRepresentable {
         scene.rootNode.addChildNode(camera)
         view.scene = scene
         view.pointOfView = camera
-        EarthLighting.update(globe:globe,camera:camera,date:Date())
+        EarthLighting.update(globe:globe,camera:camera,date:lightingDate)
         view.isPlaying = false
         return view
     }
@@ -55,7 +63,7 @@ struct EarthView: UIViewRepresentable {
         // Update its sunlight with the regular model refresh, on the main thread.
         if let globe=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=uiView.pointOfView {
             SCNTransaction.begin(); SCNTransaction.disableActions=true
-            EarthLighting.update(globe:globe,camera:camera,date:Date())
+            EarthLighting.update(globe:globe,camera:camera,date:lightingDate)
             SCNTransaction.commit()
         }
         uiView.setNeedsDisplay()

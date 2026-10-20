@@ -183,8 +183,7 @@ struct OrbitScene: UIViewRepresentable {
             guard let frame=feed?.snapshot(),frame.active,
                   let root=view?.scene?.rootNode,let camera=view?.pointOfView else { return }
             let date=frame.clock.value()
-            // Never read/write this node tree from SceneKit's render delegate:
-            // concurrent SwiftUI path replacement caused a reproducible crash.
+            // Scene traversal and path replacement share the main run loop.
             SCNTransaction.begin(); SCNTransaction.disableActions=true
             defer { SCNTransaction.commit() }
             for (id,track) in frame.tracks {

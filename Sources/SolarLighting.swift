@@ -31,7 +31,11 @@ enum EarthLighting {
         float daylight = smoothstep(-0.10, 0.10, solar);
         float diffuseLight = 0.012 + daylight * (0.24 + 0.76 * sqrt(max(0.0, solar)));
         _surface.diffuse.rgb *= diffuseLight;
-        _surface.emission.rgb *= float3(1.15, 0.93, 0.62) * (1.0-daylight) * 1.15;
+        float3 nightMap = max(_surface.emission.rgb, float3(0.0));
+        float lightEnergy = max(0.0, min(nightMap.r, nightMap.g) - 0.90 * nightMap.b);
+        float cityMask = smoothstep(0.0005, 0.0080, lightEnergy);
+        float3 cityLights = float3(nightMap.r, nightMap.g, min(nightMap.b, min(nightMap.r, nightMap.g)));
+        _surface.emission.rgb = cityLights * cityMask * float3(1.0, 0.96, 0.86) * (1.0-daylight) * 1.15;
         float rim = pow(1.0-abs(dot(normalize(_surface.normal), normalize(_surface.view))), 5.0);
         _surface.emission.rgb += float3(0.035,0.19,0.40) * rim * (0.12+0.88*daylight);
         """]

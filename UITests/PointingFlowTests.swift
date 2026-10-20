@@ -156,9 +156,7 @@ final class PointingFlowTests: XCTestCase {
             XCTAssertTrue(close.waitForExistence(timeout:15))
             let scene=app.otherElements["orbitScene"]
             XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
-            // The launch fixture starts each newly presented explorer at x300.
-            // Keep this stress case focused on active playback and dismissal;
-            // opening an already-selected contextual menu adds no coverage here.
+            // Each presented explorer starts at x300 in this fixture.
             XCTAssertEqual(app.buttons["orbitSpeed"].label,"×300")
             XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
             let date=app.staticTexts["orbitDate"],before=date.label
