@@ -22,9 +22,9 @@ enum EarthLighting {
     static func configure(_ material: SCNMaterial) {
         material.lightingModel = .constant
         material.diffuse.intensity=1; material.emission.intensity=1
-        material.setValue(NSValue(scnVector3:SCNVector3(0,0,1)),forKey:"sunDirection")
         // One opaque surface: no nearly coincident atmosphere shell or depth fighting.
         material.shaderModifiers=[.surface:"""
+        #pragma arguments
         float3 sunDirection;
         #pragma body
         float solar = dot(normalize(_surface.normal), normalize(sunDirection));
@@ -35,6 +35,7 @@ enum EarthLighting {
         float rim = pow(1.0-abs(dot(normalize(_surface.normal), normalize(_surface.view))), 5.0);
         _surface.emission.rgb += float3(0.035,0.19,0.40) * rim * (0.12+0.88*daylight);
         """]
+        material.setValue(NSValue(scnVector3:SCNVector3(0,0,1)),forKey:"sunDirection")
     }
     static func update(globe: SCNNode,camera: SCNNode,date: Date) {
         let sun=SolarPosition.direction(at:date)
