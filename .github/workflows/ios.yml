@@ -43,7 +43,33 @@ jobs:
           DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys;d=json.load(sys.stdin);v=[x for k,a in sorted(d["devices"].items(),reverse=True) if "iOS-26-" in k for x in a if "iPhone" in x["name"]];print(next((x["udid"] for x in v if x["name"]=="iPhone 16 Pro Max"),v[0]["udid"]))')
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
-          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/Tests.xcresult test | tee build-tests.log
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
+          xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/PloitSatellite.app
+          mkdir -p build/screenshots build/diagnostics
+          xcrun simctl launch --console "$DEVICE" ru.ploit.satellite --ui-screenshot-orbits-day > build/diagnostics/preflight.log 2>&1 &
+          PREFLIGHT_PID=$!
+          sleep 15
+          xcrun simctl io "$DEVICE" screenshot build/screenshots/preflight.png || true
+          cat build/diagnostics/preflight.log
+          for APP_PID in $(pgrep -x PloitSatellite || true); do
+            sample "$APP_PID" 1 1 -file "build/diagnostics/preflight-$APP_PID.txt" || true
+            head -80 "build/diagnostics/preflight-$APP_PID.txt" || true
+          done
+          xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+          wait "$PREFLIGHT_PID" || true
+          (
+            while sleep 60; do
+              date -u
+              pgrep -fl 'PloitSatellite|testmanagerd' || true
+              for APP_PID in $(pgrep -x PloitSatellite || true); do
+                sample "$APP_PID" 1 1 -file "build/diagnostics/test-$APP_PID.txt" || true
+              done
+            done
+          ) &
+          MONITOR_PID=$!
+          trap 'kill "$MONITOR_PID" 2>/dev/null || true' EXIT
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/Tests.xcresult test-without-building | tee build-tests.log
+          kill "$MONITOR_PID" || true
           xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/PloitSatellite.app
           xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
           xcrun simctl privacy "$DEVICE" grant location ru.ploit.satellite
@@ -135,5 +161,7 @@ jobs:
             build/test-attachments
             build-device.log
             build-tests.log
+            build-simulator.log
+            build/diagnostics
           if-no-files-found: warn
           retention-days: 14
