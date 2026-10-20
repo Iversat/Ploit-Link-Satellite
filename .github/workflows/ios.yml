@@ -56,6 +56,7 @@ jobs:
             head -80 "build/diagnostics/preflight-$APP_PID.txt" || true
           done
           xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+          kill "$PREFLIGHT_PID" 2>/dev/null || true
           wait "$PREFLIGHT_PID" || true
           (
             while sleep 60; do
