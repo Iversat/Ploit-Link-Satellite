@@ -1,21 +1,104 @@
-MIT License
+Ploit Space Source-Available License 1.0
+Effective date: 2026-10-20
 
 Copyright (c) 2026 Ploit Satellite contributors
+Project name: Ploit Space
+Official repository: https://github.com/Iversat/Ploit-Satellite-iOS
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This is a custom source-available license, not the MIT License and not an
+OSI-approved open source license. The English text below is authoritative.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Scope and permission
+
+"Software" means the original project code, documentation and other materials
+that the applicable copyright holders offer under this license. "You" means
+any person or entity exercising permissions under this license.
+
+Subject to the conditions below, the applicable copyright holders grant You
+a worldwide, non-exclusive, royalty-free permission to use, study, copy,
+modify, build, publish, distribute and sell copies of the Software and
+derivative versions. This permission covers both source and binary forms.
+It does not grant ownership of the original Software or of the project name.
+
+2. Attribution and notices
+
+When publishing or distributing the Software or a derivative version, You
+must preserve the original copyright notices and include this license.
+You must identify Ploit Space as the original project and provide its
+official repository URL in the accompanying documentation and, for an
+application, in an accessible About, Credits or Licenses screen.
+
+You must not misrepresent the origin of the Software, remove its attribution
+or present the original project as entirely Your own creation. You may
+identify Yourself as the author of Your own changes.
+
+3. Preservation of the project name
+
+When publishing, distributing, marketing or offering the Software or a
+derivative application under this license, You must retain "Ploit Space"
+as the primary project and application name, including in the displayed
+application name, principal user-interface title and download/product page.
+You must not replace that name with Your own name or brand, conceal the
+Ploit Space identity, or offer a white-label or rebranded version without
+separate written permission from the applicable copyright holders.
+
+Qualifying descriptions are permitted, provided the original name remains
+prominent. For example: "Ploit Space - unofficial fork by Example".
+Internal package identifiers, build identifiers and repository paths may
+be changed when needed for development or distribution; those changes
+must not be used to hide the project's origin or replace its displayed name.
+
+4. Modified versions and no endorsement
+
+Distributed modified versions must be clearly identified as unofficial,
+state who made the modifications, and include a description of the changes.
+Do not imply that a modified version is an official release or is endorsed
+by the original project maintainers. Retaining the project name to comply
+with section 3 does not grant any broader right to claim affiliation,
+sponsorship or endorsement. This license does not assert that a trademark
+has been registered.
+
+5. Preservation of conditions
+
+Copies and derivative versions distributed using the permissions of this
+license must retain its conditions for the covered Software. Additional
+terms for Your original contributions must not remove the obligations in
+sections 2-4 or purport to restrict permissions granted independently by a
+third-party license or a prior license.
+
+6. Prior MIT grants and third-party materials
+
+This license does not revoke, amend or narrow permissions already granted
+under the MIT License or another license. Earlier MIT-licensed revisions,
+including tag v1.3.3 and its original release artifacts, remain available
+under their original terms. If material is independently available to You
+under an earlier MIT grant, You may rely on that grant for that material;
+the additional naming restrictions here do not attach retroactively.
+The historical project MIT notice is retained in
+LICENSES/Ploit-Space-MIT-legacy.txt.
+
+Third-party materials, including satellite.js and NASA imagery, retain
+their own licenses or applicable terms. This license does not replace them.
+Its naming conditions do not restrict separate use of those materials
+under their own terms. Rights that applicable law grants independently
+of this license are not restricted by it.
+
+7. Termination and exceptions
+
+Your permissions under this license terminate if You fail to comply with
+its conditions. Permissions are automatically reinstated if You remedy
+the violation within 30 days after first receiving written notice of it,
+unless the same violation has previously been notified and remedied.
+Termination does not terminate independent permissions under section 6.
+Separate written permission from the applicable copyright holders may
+authorize uses that this license does not permit.
+
+8. Disclaimer
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. TO THE EXTENT
+PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR
+CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
