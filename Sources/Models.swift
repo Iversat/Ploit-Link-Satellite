@@ -228,6 +228,9 @@ struct GlobeDrag {
 }
 
 enum AimMath {
+    static func withinSkyWindow(targetElevation: Double, axisElevation: Double, minimum: Double) -> Bool {
+        targetElevation >= max(10,minimum) && axisElevation >= max(10,minimum)
+    }
     static func wrap(_ degrees: Double) -> Double { ((degrees + 180).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) - 180 }
     static func separation(az1: Double, el1: Double, az2: Double, el2: Double) -> Double {
         let d = Double.pi / 180

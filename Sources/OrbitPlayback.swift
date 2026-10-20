@@ -20,6 +20,12 @@ import Combine
     private var calculation: Task<Void,Never>?
     private var requestID=UUID()
     private var previousWall=Date()
+    private(set) var interacting=false
+    func setInteracting(_ value: Bool) {
+        interacting=value
+        if value { calculation?.cancel(); requestID=UUID() }
+        else { previousWall=Date(); if live { date=previousWall }; calculate() }
+    }
     private var revision: [Int:Elements] = [:]
     var offset: Double { date.timeIntervalSince(anchor) }
     var visibleIDs: [Int] { showAll ? elements.keys.sorted() : [selectedID] }
@@ -46,6 +52,7 @@ import Combine
         if playing { playing=false } else { live=false; playing=true; previousWall=Date() }
     }
     func pulse() {
+        guard !interacting else { return }
         let wall=Date(),elapsed=min(1,max(0,wall.timeIntervalSince(previousWall)))
         previousWall=wall
         if live { date=wall }
@@ -56,12 +63,15 @@ import Combine
         calculate()
     }
     func calculate() {
+        guard !interacting else { return }
         calculation?.cancel()
         let token=UUID(),date=self.date,ids=visibleIDs
         requestID=token
         // Do not present a previous instant's marker after a scrub.
         calculation=Task {
             var next: [Int:OrbitalState]=[:]
+            var nextPaths=paths, nextDates=pathDates
+            var pathsChanged=false
             for id in ids {
                 guard !Task.isCancelled, requestID==token else { return }
                 guard let tle=elements[id], tle.ageDays(at:date)<=14 else { continue }
@@ -70,11 +80,12 @@ import Combine
                 if pathDates[id].map({abs($0.timeIntervalSince(date))>30}) ?? true {
                     if let path=try? await engine.trajectory(elements:tle,date:date) {
                         guard !Task.isCancelled, requestID==token else { return }
-                        paths[id]=path; pathDates[id]=date
+                        nextPaths[id]=path; nextDates[id]=date; pathsChanged=true
                     }
                 }
             }
             guard !Task.isCancelled, requestID==token else { return }
+            if pathsChanged { paths=nextPaths; pathDates=nextDates }
             states=next
             message=next.isEmpty ? "Обновите данные орбит для выбранного времени" : nil
         }
@@ -108,7 +119,7 @@ struct OrbitExplorerView: View {
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
                            showAll:playback.showAll,showGround:playback.showGround,
-                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing) { id in
+                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing,onInteraction:playback.setInteracting) { id in
                     playback.selectedID=id; playback.calculate()
                 }.frame(maxWidth:.infinity,maxHeight:.infinity).clipped().accessibilityIdentifier("orbitScene")
                     if let message=playback.message {

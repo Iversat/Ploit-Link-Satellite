@@ -4,8 +4,8 @@ import CoreMotion
 
 @MainActor final class Sensors: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published var observer: Observer?
-    @Published var azimuth: Double = 0
-    @Published var elevation: Double = 0
+    private(set) var azimuth: Double = 0
+    private(set) var elevation: Double = 0
     @Published var headingAccuracy: Double = -1
     @Published var locationAccuracy: Double = -1
     @Published var motionReady = false
@@ -61,13 +61,15 @@ import CoreMotion
             guard let value else { self.message = error?.localizedDescription ?? "Датчики недоступны"; self.motionReady = false; return }
             let r = value.attitude.rotationMatrix
             self.apply(.init(x:.init(north:r.m11,west:r.m12,up:r.m13),y:.init(north:r.m21,west:r.m22,up:r.m23),z:.init(north:r.m31,west:r.m32,up:r.m33)))
-            self.message = self.northIsTrue ? "Истинный север" : "Магнитный север · точность ограничена"
+            let text=self.northIsTrue ? "Истинный север" : "Магнитный север · точность ограничена"
+            if self.message != text { self.message=text }
         }
     }
     private func apply(_ basis: DeviceBasis) {
+        objectWillChange.send()
         lastBasis = basis
         let v = AimMath.direction(axis:axis,basis:basis)
-        azimuth = v.az; elevation = v.el; motionReady = true
+        azimuth = v.az; elevation = v.el; if !motionReady { motionReady = true }
     }
     #if DEBUG
     func preview(azimuth: Double, elevation: Double, axis: AimAxis) {

@@ -27,7 +27,8 @@ enum HomePanel: String, Identifiable {
     @Published var manualLocation = UserDefaults.standard.bool(forKey: "manualLocation")
     @Published var manualLat = UserDefaults.standard.string(forKey: "manualLat") ?? ""
     @Published var manualLon = UserDefaults.standard.string(forKey: "manualLon") ?? ""
-    @Published var minElevation: Double = 10
+    @Published var minElevation: Double = 20
+    @Published var clearSkyConfirmed = false
     @Published var axis: AimAxis = AimAxis(rawValue:UserDefaults.standard.string(forKey:"aimAxis") ?? "") ?? .top {
         didSet { sensors.axis = axis; UserDefaults.standard.set(axis.rawValue,forKey:"aimAxis") }
     }
@@ -66,6 +67,7 @@ enum HomePanel: String, Identifiable {
     var stale: Bool { (elements?.ageDays() ?? 999) > 3 }
     var usable: Bool { (elements?.ageDays() ?? 999) <= 14 }
     var aboveHorizon: Bool { (look?.elevation ?? -90) > 0 }
+    var aboveMask: Bool { (look?.elevation ?? -90) >= max(10,minElevation) }
     var trackingMotion: TrackingMotion? {
         guard !training, let look, let futureLook else { return nil }
         return TrackingMotion(current:look,future:futureLook)
@@ -83,8 +85,10 @@ enum HomePanel: String, Identifiable {
         return AimMath.separation(az1: sensors.azimuth, el1: sensors.elevation, az2: target.az, el2: target.el)
     }
     var aligned: Bool {
-        guard let angularError, angularError < 8, sensors.northIsTrue, sensors.headingAccuracy >= 0, sensors.headingAccuracy <= 20 else { return false }
-        return training || (aboveHorizon && usable)
+        guard let angularError, angularError < 5, sensors.northIsTrue, sensors.headingAccuracy >= 0, sensors.headingAccuracy <= 20 else { return false }
+        if training { return true }
+        guard usable, clearSkyConfirmed, let look else { return false }
+        return AimMath.withinSkyWindow(targetElevation:look.elevation,axisElevation:sensors.elevation,minimum:minElevation)
     }
     init() {
         if let url = Bundle.main.url(forResource: "catalog", withExtension: "json"), let data = try? Data(contentsOf: url), let decoded = try? JSONDecoder().decode([Satellite].self, from: data) { satellites = decoded }
@@ -108,7 +112,19 @@ enum HomePanel: String, Identifiable {
                 sensors.preview(azimuth:seeking ? 95 : 135,elevation:seeking ? 25 : 45,axis:axis)
                 pointingIntro = preview.contains("intro")
             }
-            Task { await select(id: selectedID) }
+            Task {
+                await select(id:selectedID)
+                if preview.contains("unavailable") || preview.contains("skycheck") {
+                    fleetTask?.cancel(); fleetToken=UUID(); passTask?.cancel()
+                    predicting=false; calculatingSessions=false; training=false
+                    let elevation=preview.contains("unavailable") ? -22.0:45.0
+                    look=Look(azimuth:135,elevation:elevation,rangeKm:1200,rangeRate:0,latitude:0,longitude:0,altitudeKm:400)
+                    sensors.preview(azimuth:135,elevation:45,axis:axis)
+                    let now=Date(); clock=now
+                    let pass=PassWindow(rise:now.addingTimeInterval(600).timeIntervalSince1970,culmination:now.addingTimeInterval(750).timeIntervalSince1970,set:now.addingTimeInterval(900).timeIntervalSince1970,maxElevation:60,inProgress:false)
+                    sessionWindows[selectedID]=[pass]; passes=[pass]
+                }
+            }
             if preview.contains("settings-stress") {
                 ticker=Task { [weak self] in
                     while !Task.isCancelled {
@@ -135,6 +151,7 @@ enum HomePanel: String, Identifiable {
     func select(id: Int) async {
         let token = UUID(); selectionToken = token
         refreshToken = UUID(); updating = false
+        clearSkyConfirmed=false
         selectedID = id; modeID = satellite?.primaryMode.id ?? "aprs"
         UserDefaults.standard.set(id, forKey: "selectedSatellite")
         look = nil; futureLook = nil; elements = nil; passes = []; error = nil
@@ -179,6 +196,7 @@ enum HomePanel: String, Identifiable {
             let future = try await engine.look(elements: elements, observer: observer, date: date.addingTimeInterval(10))
             guard token == selectionToken else { return }
             look = position; futureLook = future
+            if !aboveMask && clearSkyConfirmed { clearSkyConfirmed=false }
             let moved = passObserver.map { abs($0.latitude-observer.latitude) + abs($0.longitude-observer.longitude) > 0.03 } ?? true
             if !predicting && (moved || Date().timeIntervalSince(lastPrediction) > 300) { predict(elements: elements, observer: observer) }
         } catch { if token == selectionToken { self.error = error.localizedDescription; look = nil } }
@@ -241,6 +259,6 @@ enum HomePanel: String, Identifiable {
         refreshSessions(force:true)
         Task { await tick() }
     }
-    func enterPointing(training: Bool = false) { self.training = training; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
-    func leavePointing() { pointing = false; training = false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }
+    func enterPointing(training: Bool = false) { self.training = training; clearSkyConfirmed=false; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
+    func leavePointing() { pointing = false; training = false; clearSkyConfirmed=false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }
 }

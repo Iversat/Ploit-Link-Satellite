@@ -122,8 +122,9 @@ struct SettingsView: View {
                     Picker("Ось наведения",selection:$model.axis) { ForEach(AimAxis.allCases) { Text($0.title).tag($0) } }
                     Picker("Вид наведения",selection:$model.pointingStyle) { ForEach(PointingStyle.allCases) { Text($0.title).tag($0) } }
                     Text("Выбирайте ось, соответствующую максимуму диаграммы вашей антенны. Для штыря наведение вдоль штыря может попадать в провал диаграммы.").font(.caption).foregroundStyle(.secondary)
-                    Slider(value:$model.minElevation,in:0...30,step:5) { Text("Маска горизонта") }
+                    Slider(value:$model.minElevation,in:10...60,step:5) { Text("Маска горизонта") }
                     LabeledContent("Минимальный угол места",value:"\(Int(model.minElevation))°")
+                    Text("Зелёный индикатор доступен только выше этого угла. Дома, деревья и стены автоматически не распознаются; для наведения нужен открытый обзор неба.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Орбитальные данные") {
                     if let elements=model.elements {
@@ -140,7 +141,7 @@ struct SettingsView: View {
                     Text("Тренировка использует условную цель 135° / 45°, а не реальный спутник.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("О приложении") {
-                    Text("Ploit Space · 1.3.2").fontWeight(.medium)
+                    Text("Ploit Space · 1.3.3").fontWeight(.medium)
                     Text("Визуальный помощник для внешнего радиоустройства. Не измеряет спутниковый сигнал и не передаёт сообщения встроенным модемом iPhone.").font(.footnote).foregroundStyle(.secondary)
                     Text("Приложение создано независимо от Apple. Иллюстрация Земли: NASA Earth Observatory, Black Marble 2016. Орбиты: satellite.js (MIT), CelesTrak.").font(.caption).foregroundStyle(.secondary)
                     Link("Данные и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Satellite-iOS")!)

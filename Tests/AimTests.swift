@@ -2,6 +2,44 @@ import XCTest
 @testable import PloitSatellite
 
 final class AimTests: XCTestCase {
+    @MainActor func testAlignmentRequiresBothSkyAnglesAndOpenSkyConfirmation() throws {
+        let model=AppModel()
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        model.elements=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        model.minElevation=20; model.training=false
+        model.axis = .top
+        model.sensors.preview(azimuth:135,elevation:45,axis:.top)
+        model.look=Look(azimuth:135,elevation:45,rangeKm:1000,rangeRate:0,latitude:0,longitude:0,altitudeKm:400)
+        XCTAssertFalse(model.aligned)
+        model.clearSkyConfirmed=true; XCTAssertTrue(model.aligned)
+        model.look?.elevation=22
+        model.sensors.preview(azimuth:135,elevation:18,axis:.top)
+        XCTAssertLessThan(try XCTUnwrap(model.angularError),5)
+        XCTAssertFalse(model.aligned) // Axis below mask even if angular error is small.
+        model.look?.elevation=0; model.sensors.preview(azimuth:135,elevation:0,axis:.top)
+        XCTAssertFalse(model.aligned)
+        model.axis = .back; model.look?.elevation=90
+        model.sensors.preview(azimuth:135,elevation:90,axis:.back)
+        XCTAssertTrue(model.aligned) // Horizontal back facing UP is valid at zenith.
+        model.sensors.preview(azimuth:135,elevation:-90,axis:.back)
+        XCTAssertFalse(model.aligned)
+        model.leavePointing(); XCTAssertFalse(model.clearSkyConfirmed)
+    }
+    @MainActor func testGlobeInteractionDefersCalculationAndResumesLiveTime() async throws {
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        let tle=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        let playback=OrbitPlayback()
+        playback.configure(elements:[tle.norad:tle],selectedID:tle.norad,initialDate:nil)
+        playback.setInteracting(true)
+        let date=playback.date
+        playback.pulse(); playback.calculate()
+        XCTAssertEqual(playback.date,date); XCTAssertTrue(playback.interacting)
+        playback.setInteracting(false)
+        for _ in 0..<40 { if playback.states[tle.norad] != nil { break }; try await Task.sleep(nanoseconds:50_000_000) }
+        XCTAssertNotNil(playback.states[tle.norad]); XCTAssertFalse(playback.interacting)
+        XCTAssertLessThan(abs(playback.date.timeIntervalSinceNow),3)
+        playback.stop()
+    }
     func testGlobeDragLocksAxisAndUsesGestureStartPose() {
         var camera=GlobeCamera(yaw:179,pitch:35,zoom:1.2),drag=GlobeDrag()
         drag.begin(camera)

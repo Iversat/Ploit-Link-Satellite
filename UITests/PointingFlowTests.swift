@@ -1,6 +1,30 @@
 import XCTest
 
 final class PointingFlowTests: XCTestCase {
+    func testUnavailableEarthAndRadarShowSamePassAndNoConnection() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-earth-unavailable"]; app.launch()
+        let summary=app.descendants(matching:.any)["sessionSummary"]
+        XCTAssertTrue(summary.waitForExistence(timeout:15))
+        expectation(for:NSPredicate(format:"label CONTAINS %@","До сеанса 10 мин"),evaluatedWith:summary)
+        waitForExpectations(timeout:10)
+        let before=summary.label
+        XCTAssertTrue(app.staticTexts["pointingInstruction"].label.contains("Дождитесь"))
+        app.buttons["showRadar"].tap()
+        XCTAssertTrue(app.staticTexts["pointingStatus"].label.contains("ЗА ГОРИЗОНТОМ"))
+        XCTAssertEqual(summary.label,before)
+        XCTAssertFalse(app.buttons["confirmClearSky"].exists)
+    }
+    func testCorrectDirectionAloneDoesNotConfirmOpenSky() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-earth-skycheck"]; app.launch()
+        let button=app.buttons["confirmClearSky"]
+        XCTAssertTrue(button.waitForExistence(timeout:15))
+        XCTAssertFalse(app.staticTexts["pointingStatus"].label.contains("совпало"))
+        button.tap()
+        app.buttons["Я снаружи, направление не закрыто"].tap()
+        XCTAssertTrue(app.staticTexts["pointingStatus"].label.contains("совпало"))
+        button.tap()
+        XCTAssertFalse(app.staticTexts["pointingStatus"].label.contains("совпало"))
+    }
     func testSettingsOpensRepeatedlyDuringLiveUpdatesFromButtonEdges() {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()
         let open=app.buttons["openSettings"]

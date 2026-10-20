@@ -18,20 +18,22 @@ struct OrbitScene: UIViewRepresentable {
     var observer: Observer?
     var focus: Int
     var animated: Bool
+    var onInteraction: (Bool)->Void
     var onSelect: (Int)->Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
         let view=GlobeSceneView()
-        view.backgroundColor = .black; view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond=30; view.allowsCameraControl=false
+        view.backgroundColor = .black; view.antialiasingMode = .multisampling2X
+        view.contentScaleFactor=min(2,UIScreen.main.scale)
+        view.preferredFramesPerSecond=ProcessInfo.processInfo.isLowPowerModeEnabled ? 30:60; view.allowsCameraControl=false
         let scene=SCNScene(),root=scene.rootNode
-        let sphere=SCNSphere(radius:1); sphere.segmentCount=96
+        let sphere=SCNSphere(radius:1); sphere.segmentCount=64
         let earth=SCNMaterial(); earth.lightingModel = .constant
         earth.diffuse.contents=UIImage(named:"earth-day.jpg"); earth.diffuse.intensity=0.6
         earth.emission.contents=UIImage(named:"earth-night.jpg"); earth.emission.intensity=0.8
         sphere.firstMaterial=earth
         let globe=SCNNode(geometry:sphere); globe.scale=SCNVector3(1,0.996647,1); root.addChildNode(globe)
-        let air=SCNSphere(radius:1.012); air.segmentCount=64
+        let air=SCNSphere(radius:1.012); air.segmentCount=40
         let material=SCNMaterial(); material.lightingModel = .constant; material.diffuse.contents=UIColor.clear
         material.blendMode = .add; material.writesToDepthBuffer=false
         material.shaderModifiers=[.fragment:"float rim=pow(1.0-abs(dot(normalize(_surface.normal),normalize(_surface.view))),5.0); _output.color=float4(0.08,0.32,0.7,1.0)*rim*0.55;"]
@@ -56,6 +58,7 @@ struct OrbitScene: UIViewRepresentable {
         starGeometry.firstMaterial=starMaterial; root.addChildNode(SCNNode(geometry:starGeometry))
         view.scene=scene; view.pointOfView=camera; view.isPlaying=true
         context.coordinator.view=view
+        context.coordinator.onInteraction=onInteraction
         view.layoutCamera = { [weak coordinator=context.coordinator] in coordinator?.applyCamera() }
         view.isAccessibilityElement=true; view.accessibilityLabel="Трёхмерная Земля и орбиты спутников. Вращение и масштаб жестами."
         let tap=UITapGestureRecognizer(target:context.coordinator,action:#selector(Coordinator.tap(_:)))
@@ -69,7 +72,7 @@ struct OrbitScene: UIViewRepresentable {
     }
     func updateUIView(_ view: SCNView,context:Context) {
         guard let root=view.scene?.rootNode else { return }
-        let coordinator=context.coordinator; coordinator.onSelect=onSelect
+        let coordinator=context.coordinator; coordinator.onSelect=onSelect; coordinator.onInteraction=onInteraction
         let visible=Set(showAll ? ids:[selectedID])
         for id in ids {
             let name="sat-\(id)",pathName="path-\(id)"
@@ -82,24 +85,36 @@ struct OrbitScene: UIViewRepresentable {
             let marker: SCNNode
             if let existing=root.childNode(withName:name,recursively:false) { marker=existing }
             else {
-                marker=SCNNode(geometry:SCNSphere(radius:0.018)); marker.name=name
+                let dot=SCNSphere(radius:0.018); dot.segmentCount=12
+                marker=SCNNode(geometry:dot); marker.name=name
                 let m=SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents=color; m.emission.contents=color
                 marker.geometry?.firstMaterial=m
                 let label=SCNNode(); label.name="label"; label.position=SCNVector3(0,0.05,0)
                 label.constraints=[SCNBillboardConstraint()]; marker.addChildNode(label); root.addChildNode(marker)
             }
             marker.isHidden=false
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration=animated && !UIAccessibility.isReduceMotionEnabled ? 0.45:0
-            marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
-            SCNTransaction.commit()
+            if coordinator.positions[id] != state.position {
+                SCNTransaction.begin()
+                SCNTransaction.animationDuration=animated && !UIAccessibility.isReduceMotionEnabled ? 0.48:0
+                marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
+                SCNTransaction.commit()
+                coordinator.positions[id]=state.position
+            }
             marker.scale=SCNVector3(selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85)
             if coordinator.labels[id] != labels[id], let label=marker.childNode(withName:"label",recursively:false) {
-                let text=SCNText(string:labels[id] ?? "",extrusionDepth:0)
-                text.font=UIFont.systemFont(ofSize:12,weight:.semibold); text.flatness=0.4
-                text.firstMaterial?.lightingModel = .constant; text.firstMaterial?.diffuse.contents=UIColor.white
-                label.geometry=text; label.scale=SCNVector3(0.004,0.004,0.004)
-                let bounds=text.boundingBox; label.pivot=SCNMatrix4MakeTranslation((bounds.max.x+bounds.min.x)/2,0,0)
+                // Rasterize once per changed label, avoiding 3D glyph tessellation during gestures.
+                let value=labels[id] ?? ""
+                let style=NSMutableParagraphStyle(); style.alignment = .center
+                let attrs: [NSAttributedString.Key:Any]=[.font:UIFont.systemFont(ofSize:26,weight:.semibold),.foregroundColor:UIColor.white,.paragraphStyle:style]
+                let size=CGSize(width:360,height:80)
+                let format=UIGraphicsImageRendererFormat(); format.scale=1
+                let image=UIGraphicsImageRenderer(size:size,format:format).image { _ in
+                    (value as NSString).draw(in:CGRect(origin:.zero,size:size),withAttributes:attrs)
+                }
+                let plane=SCNPlane(width:0.48,height:0.107)
+                let material=SCNMaterial(); material.lightingModel = .constant
+                material.diffuse.contents=image; material.isDoubleSided=true; material.writesToDepthBuffer=false
+                plane.firstMaterial=material; label.geometry=plane
                 coordinator.labels[id]=labels[id]
             }
             let key="\(id)-\(showGround)-\(pathDates[id]?.timeIntervalSince1970 ?? 0)-\(paths[id]?.orbit.first?.x ?? 0)-\(selectedID==id)"
@@ -142,6 +157,8 @@ struct OrbitScene: UIViewRepresentable {
         var labels: [Int:String]=[:]
         var pathKeys: [Int:String]=[:]
         weak var view: SCNView?
+        var positions: [Int:OrbitPoint]=[:]
+        var onInteraction: ((Bool)->Void)?
         var camera=GlobeCamera()
         var drag=GlobeDrag()
         func applyCamera() {
@@ -161,13 +178,16 @@ struct OrbitScene: UIViewRepresentable {
         }
         @objc func pan(_ gesture: UIPanGestureRecognizer) {
             guard let view else { return }
-            if gesture.state == .began { drag.begin(camera) }
+            if gesture.state == .began { drag.begin(camera); onInteraction?(true) }
             let delta=gesture.translation(in:view)
             camera=drag.update(x:Double(delta.x),y:Double(delta.y),width:Double(view.bounds.width))
             applyCamera()
+            if [.ended,.cancelled,.failed].contains(gesture.state) { onInteraction?(false) }
         }
         @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began { onInteraction?(true) }
             camera.magnify(Double(gesture.scale)); gesture.scale=1; applyCamera()
+            if [.ended,.cancelled,.failed].contains(gesture.state) { onInteraction?(false) }
         }
         @objc func tap(_ gesture: UITapGestureRecognizer) {
             guard let view=gesture.view as? SCNView else { return }

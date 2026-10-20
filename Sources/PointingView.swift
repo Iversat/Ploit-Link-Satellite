@@ -112,7 +112,7 @@ struct PointingContent: View {
     private enum Panel: String, Identifiable { case satellites,passes,radio;var id:String{rawValue} }
     private var dx: Double { model.target.map { AimMath.wrap($0.az-sensors.azimuth) } ?? 0 }
     private var dy: Double { model.target.map { $0.el-sensors.elevation } ?? 0 }
-    private var available: Bool { model.target != nil && sensors.motionReady && (model.training || model.aboveHorizon) }
+    private var available: Bool { model.target != nil && sensors.motionReady && (model.training || model.aboveMask) }
     private var rearProjection: RearAimProjection? {
         guard let target=model.target, let basis=sensors.lastBasis else { return nil }
         return RearAimProjection(azimuth:target.az,elevation:target.el,basis:basis)
@@ -121,6 +121,8 @@ struct PointingContent: View {
         if !sensors.motionReady { return "ПОДГОТОВКА" }
         if model.target == nil { return "НУЖНА ОРБИТА" }
         if !model.training && !model.aboveHorizon { return "ЗА ГОРИЗОНТОМ" }
+        if !model.training && !model.aboveMask { return "НИЖЕ УГЛА ОБЗОРА" }
+        if !model.training && !model.clearSkyConfirmed { return "ПРОВЕРЬТЕ ОБЗОР НЕБА" }
         if model.aligned { return "НАПРАВЛЕНИЕ СОВПАЛО" }
         if !sensors.northIsTrue || sensors.headingAccuracy < 0 || sensors.headingAccuracy > 20 { return "ПРОВЕРЬТЕ КОМПАС" }
         return "НАВЕДЕНИЕ"
@@ -129,6 +131,8 @@ struct PointingContent: View {
         if !sensors.motionReady { return "Подготовьте\niPhone" }
         if model.target == nil { return "Обновите\nданные орбиты" }
         if !model.training && !model.aboveHorizon { return "Дождитесь\nпролёта спутника" }
+        if !model.training && !model.aboveMask { return "Дождитесь подъёма\nвыше \(Int(model.minElevation))°" }
+        if !model.training && !model.clearSkyConfirmed { return "Выйдите на открытое\nместо" }
         if model.aligned { return model.training ? "Держите направление\nна спутник":"Следуйте телефоном\nза спутником" }
         if model.axis == .back {
             if rearProjection?.behind == true { return "Разверните заднее стекло\nк спутнику" }
@@ -141,7 +145,8 @@ struct PointingContent: View {
     }
     private var hint: String {
         if !sensors.motionReady { return sensors.message }
-        if !model.training && !model.aboveHorizon { return "Ближайшее окно указано в пролётах" }
+        if !model.training && !model.aboveMask { return "Ближайшее окно и обратный отсчёт — ниже" }
+        if !model.training && !model.clearSkyConfirmed { return "Дома и деревья могут закрывать спутник.\nПриложение не определяет препятствия." }
         if !sensors.northIsTrue || sensors.headingAccuracy < 0 || sensors.headingAccuracy > 20 { return "Уберите магниты и откалибруйте компас" }
         if model.axis == .back { return "Направляйте заднее стекло в сторону значка.\nУдерживайте спутник в центре, следуя за ним." }
         if let motion=model.trackingMotion { return motion.instruction+"\n"+model.axis.instruction }
@@ -203,8 +208,9 @@ struct PointingContent: View {
             Text(status).font(.system(size:13,weight:.semibold)).foregroundStyle(model.aligned ? pointingGreen:.white.opacity(0.5)).accessibilityIdentifier("pointingStatus")
             Text(instruction).font(.system(size:compact ? 24:26,weight:.semibold)).lineSpacing(2).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true).padding(.top,9).accessibilityIdentifier("pointingInstruction")
             Text(hint).font(.system(size:12)).foregroundStyle(.white.opacity(0.42)).multilineTextAlignment(.center).padding(.horizontal,30).padding(.top,14)
-            if !model.training, let pass=model.session(for:model.selectedID) {
-                Text(SessionText.title(pass,at:model.clock)).font(.system(size:11,weight:.medium)).foregroundStyle(.white.opacity(0.55)).monospacedDigit().padding(.top,10)
+            if !model.training {
+                SessionSummaryView(model:model,compact:true).padding(.horizontal,26).padding(.top,12)
+                skyCheck.padding(.horizontal,26).padding(.top,8)
             }
             Spacer(minLength:12)
             HStack {
@@ -226,12 +232,16 @@ struct PointingContent: View {
             Spacer(minLength:12)
             Group {
                 if model.axis == .back { RearAimReticle(projection:rearProjection,aligned:model.aligned,available:available) }
-                else { EarthAimBeacon(bearing:dx,aligned:model.aligned) }
-            }.frame(height:size.height*(compact ? 0.15:0.23))
+                else { EarthAimBeacon(bearing:dx,aligned:model.aligned,available:available) }
+            }.frame(height:size.height*(model.training ? (compact ? 0.15:0.23):(compact ? 0.12:0.16)))
             Text(instruction.replacingOccurrences(of:"\n",with:" "))
                 .font(.system(size:20,weight:.semibold)).multilineTextAlignment(.center).padding(.horizontal,18).accessibilityIdentifier("pointingInstruction")
             Text(model.aligned ? "Направление совпало" : status.capitalized).font(.system(size:14)).foregroundStyle(.white.opacity(0.55)).padding(.top,7).accessibilityIdentifier("pointingStatus")
-            Spacer().frame(height:compact ? 20:30)
+            if !model.training {
+                SessionSummaryView(model:model,compact:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,30).padding(.top,12)
+                skyCheck.padding(.horizontal,26).padding(.top,8)
+            }
+            Spacer().frame(height:compact ? 12:18)
             SatelliteGlassGroup {
             VStack(spacing:0) {
                 earthRow("Спутник",subtitle:model.satellite?.name ?? "Выбрать",icon:"antenna.radiowaves.left.and.right",color:.green,id:"earthSatellites",separator:true) { sheet = .satellites }
@@ -248,6 +258,22 @@ struct PointingContent: View {
                 Text("Завершить наведение").font(.system(size:17,weight:.medium)).foregroundStyle(Color(red:1,green:0.40,blue:0.38)).frame(maxWidth:.infinity).frame(height:54).satelliteGlass(in:Capsule(),clear:true,interactive:true)
             }.buttonStyle(.plain).accessibilityIdentifier("finishPointing").padding(.horizontal,24).padding(.bottom,12)
         }.background(.black.opacity(0.14))
+    }
+    @State private var showSkyConfirmation=false
+    @ViewBuilder private var skyCheck: some View {
+        if model.aboveMask {
+            Button {
+                if model.clearSkyConfirmed { model.clearSkyConfirmed=false }
+                else { showSkyConfirmation=true }
+            } label: {
+                Label(model.clearSkyConfirmed ? "Обзор подтверждён · изменить":"Подтвердить открытый обзор неба",systemImage:model.clearSkyConfirmed ? "checkmark.circle":"sun.max")
+                    .font(.system(size:12,weight:.medium)).padding(.vertical,10).frame(maxWidth:.infinity)
+            }.buttonStyle(.plain).foregroundStyle(.cyan).accessibilityIdentifier("confirmClearSky")
+            .confirmationDialog("Есть прямой обзор неба в направлении спутника?",isPresented:$showSkyConfirmation,titleVisibility:.visible) {
+                Button("Я снаружи, направление не закрыто") { model.clearSkyConfirmed=true }
+                Button("Отмена",role:.cancel) {}
+            } message: { Text("Стены, крыши и деревья могут блокировать сигнал. Это ваша проверка обзора, а не измерение радиосвязи.") }
+        }
     }
     private func earthRow(_ title:String,subtitle:String,icon:String,color:Color,id:String,separator:Bool,action:@escaping ()->Void)->some View {
         Button(action:action) {
@@ -267,6 +293,7 @@ struct PointingContent: View {
 struct EarthAimBeacon: View {
     var bearing: Double
     var aligned: Bool
+    var available: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         GeometryReader { geometry in
@@ -274,7 +301,7 @@ struct EarthAimBeacon: View {
             ZStack {
                 Ellipse().fill(RadialGradient(colors:[pointingGreen.opacity(aligned ? 0.25:0.07),.clear],center:.center,startRadius:0,endRadius:55)).frame(width:100,height:100).offset(y:10)
                 Capsule().fill(LinearGradient(colors:[.cyan.opacity(0.2),pointingGreen.opacity(aligned ? 0.25:0.04),.clear],startPoint:.top,endPoint:.bottom)).frame(width:18,height:geometry.size.height*0.62).blur(radius:10).offset(x:x*0.5,y:-10)
-                SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).shadow(color:.white.opacity(0.6),radius:9).offset(x:x,y:-geometry.size.height*0.30)
+                if available { SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).shadow(color:.white.opacity(0.6),radius:9).offset(x:x,y:-geometry.size.height*0.30) }
                 Circle().fill(aligned ? pointingGreen:.white.opacity(0.65)).frame(width:19,height:19).overlay(Circle().stroke(.white,lineWidth:4).frame(width:27,height:27)).offset(y:geometry.size.height*0.33)
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
         }.animation(reduceMotion ? nil : .easeOut(duration:0.2),value:bearing)
@@ -300,6 +327,7 @@ struct PointingIntro: View {
                 VStack(alignment:.leading,spacing:18) {
                     bullet(model.axis == .top ? "Держите экран перед собой и направляйте верхний торец iPhone." : "Ориентир — перпендикуляр к плоскости заднего стекла iPhone.")
                     bullet(model.axis == .back ? "Поворачивайте и наклоняйте телефон, чтобы значок спутника оказался в центре прицела. Следуйте за ним, удерживая в центре." : "Поворачивайте и наклоняйте телефон, пока точка не окажется в зелёном секторе.")
+                    bullet("Наводитесь снаружи, при открытом небе. Препятствия приложение не распознаёт.")
                     bullet("Зелёный круг подтверждает направление. Наличие радиосвязи проверяет внешний модуль.")
                 }.padding(.horizontal,30).padding(.top,28)
                 Spacer(minLength:20)

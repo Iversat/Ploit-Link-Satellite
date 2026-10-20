@@ -10,11 +10,12 @@ struct EarthView: UIViewRepresentable {
         let view = SCNView()
         view.backgroundColor = .black
         view.isUserInteractionEnabled = false
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = .multisampling2X
+        view.contentScaleFactor=min(2,UIScreen.main.scale)
         view.preferredFramesPerSecond = 30
         let scene = SCNScene()
         let sphere = SCNSphere(radius: 1)
-        sphere.segmentCount = 128
+        sphere.segmentCount = 64
         let material = SCNMaterial()
         material.diffuse.contents = UIImage(named: "earth-day.jpg")
         material.diffuse.intensity = 0.06
@@ -32,7 +33,7 @@ struct EarthView: UIViewRepresentable {
         globe.position = SCNVector3(0, -0.60, 0)
         scene.rootNode.addChildNode(globe)
         let atmosphere = SCNSphere(radius: 1.015)
-        atmosphere.segmentCount = 128
+        atmosphere.segmentCount = 64
         let glow = SCNMaterial()
         glow.lightingModel = .constant
         glow.diffuse.contents = UIColor.clear

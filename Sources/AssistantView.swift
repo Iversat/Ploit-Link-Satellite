@@ -90,7 +90,7 @@ struct AssistantView: View {
                     Spacer()
                     if model.updating { ProgressView().tint(.white) }
                 }
-                Text(statusDetail).font(.system(size: 14)).foregroundStyle(.white.opacity(0.68)).fixedSize(horizontal:false,vertical:true)
+                SessionSummaryView(model:model)
             }
         }
     }
@@ -98,15 +98,9 @@ struct AssistantView: View {
         if model.observer == nil { return "Нужно ваше положение" }
         if model.elements == nil { return "Нужны данные орбиты" }
         if !model.usable { return "Обновите орбиту" }
-        return model.aboveHorizon ? "Спутник над горизонтом" : "Спутник вне видимости"
-    }
-    private var statusDetail: String {
-        if model.observer == nil { return "Разрешите геопозицию или укажите координаты в настройках." }
-        if model.elements == nil { return model.error ?? "Подключитесь к интернету один раз для загрузки TLE." }
-        if !model.usable { return "Данным больше 14 дней. Наведение приостановлено до обновления." }
-        if let look = model.look, model.aboveHorizon { return "\(model.satellite?.name ?? "") · высота \(Int(look.elevation))° · \(Int(look.rangeKm)) км\(model.stale ? "\nTLE старше 3 дней — возможна ошибка." : "")" }
-        if let pass = model.session(for:model.selectedID) { return "\(model.satellite?.name ?? "") · ближайшее окно \(SessionText.interval(pass))." }
-        return model.error ?? (model.predicting ? "Вычисляем ближайшие пролёты…" : "Ожидаем видимый пролёт выбранного спутника.")
+        if model.look == nil { return "Рассчитываем положение" }
+        if model.aboveMask { return "В окне видимости" }
+        return model.aboveHorizon ? "Ниже угла обзора" : "Спутник за горизонтом"
     }
     private func smallButton(_ text: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action:action) {
