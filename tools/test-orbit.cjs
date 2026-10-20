@@ -18,6 +18,13 @@ for(const s of seeds){
   const r1=ctx.lookAt(date-1000,48.708,44.513,100).rangeKm,r2=ctx.lookAt(date+1000,48.708,44.513,100).rangeKm;
   assert(Math.abs(look.rangeRate-(r2-r1)/2)<0.01);
   const state=ctx.stateAt(date),track=JSON.parse(ctx.trajectoryJSON(date));
+  const motion=JSON.parse(ctx.motionJSON(date,3600,5));
+  assert.equal(motion.length,721);
+  for(const t of [2.5,302.5,1797.5,3597.5]) {
+    const i=Math.floor(t/5),f=t/5-i,exact=ctx.stateAt(date+t*1000).position;
+    const error=Math.hypot(...['x','y','z'].map(k=>motion[i].position[k]+(motion[i+1].position[k]-motion[i].position[k])*f-exact[k]));
+    assert(error<0.05,`Interpolation error ${error} km`);
+  }
   assert(Math.abs(state.latitude-look.latitude)<1e-8 && Math.abs(state.longitude-look.longitude)<1e-8);
   assert(track.orbit.length===121 && track.ground.length===121);
   assert(Math.hypot(track.orbit[60].x-state.position.x,track.orbit[60].y-state.position.y,track.orbit[60].z-state.position.z)<1e-6);

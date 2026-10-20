@@ -8,4 +8,5 @@ with zipfile.ZipFile(sys.argv[1]) as z:
         assert len(z.read('Payload/PloitSatellite.app/' + name)) > 0, name
     assert 'NSLocationWhenInUseUsageDescription' in plist
     assert 'NSMotionUsageDescription' in plist
+    assert plist.get('CADisableMinimumFrameDurationOnPhone') is True
     print(json.dumps({'ipa_verified':True,'bundle':plist['CFBundleIdentifier'],'executable_bytes':len(binary),'signed':False}))

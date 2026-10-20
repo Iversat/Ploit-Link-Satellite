@@ -33,6 +33,11 @@ function stateAt(ms) {
     longitude:geo.longitude*180/Math.PI,altitudeKm:geo.height,periodSeconds:2*Math.PI/currentSatrec.no*60};
 }
 function stateJSON(ms) {return JSON.stringify(stateAt(ms));}
+function motionJSON(ms,seconds,step) {
+  var samples=[];
+  for(var i=0;i<=Math.ceil(seconds/step);i++) samples.push(stateAt(ms+i*step*1000));
+  return JSON.stringify(samples);
+}
 function trajectoryJSON(ms) {
   var state=stateAt(ms),period=state.periodSeconds*1000,gmst=satellite.gstime(new Date(ms)),orbit=[],ground=[];
   for(var i=0;i<=120;i++) {
@@ -81,4 +86,4 @@ function passesJSON(ms,lat,lon,alt,mask) {
   // An unfinished window is not presented as a completed pass.
   return JSON.stringify(result);
 }
-if(typeof module!=='undefined') module.exports={installTLE,lookAt,lookJSON,passesJSON,stateAt,stateJSON,trajectoryJSON};
+if(typeof module!=='undefined') module.exports={installTLE,lookAt,lookJSON,passesJSON,stateAt,stateJSON,motionJSON,trajectoryJSON};

@@ -15,7 +15,7 @@ struct GlobeFraming {
         let halfHorizontal=atan(tan(halfVertical)*width/height)
         let halfVisible=atan(tan(halfVertical)*available/height)
         distance=1.22/sin(min(halfVisible,halfHorizontal))/max(0.8,min(1.65,zoom))
-        let near=0.01,far=100.0,f=1/tan(halfVertical)
+        let near=0.1,far=100.0,f=1/tan(halfVertical)
         var matrix=SCNMatrix4Identity
         matrix.m11=Float(f*height/width)
         matrix.m22=Float(f)

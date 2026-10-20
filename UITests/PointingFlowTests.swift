@@ -149,4 +149,26 @@ final class PointingFlowTests: XCTestCase {
         app.buttons["Готово"].tap()
         XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
     }
+    func testCloseWhilePlaying300AfterDragAndScrubRepeatedly() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-orbits-playback"]; app.launch()
+        for iteration in 0..<3 {
+            let close=app.buttons["closeOrbits"]
+            XCTAssertTrue(close.waitForExistence(timeout:15))
+            let scene=app.otherElements["orbitScene"]
+            XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
+            if iteration>0 {
+                app.buttons["orbitSpeed"].tap(); app.buttons["×300"].tap()
+                if app.buttons["playOrbit"].label != "Пауза" { app.buttons["playOrbit"].tap() }
+            }
+            let date=app.staticTexts["orbitDate"],before=date.label
+            let changes=expectation(for:NSPredicate(format:"label != %@",before),evaluatedWith:date)
+            XCTAssertEqual(XCTWaiter.wait(for:[changes],timeout:4),.completed)
+            scene.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.3)).press(forDuration:0.05,thenDragTo:scene.coordinate(withNormalizedOffset:CGVector(dx:0.25,dy:0.3)))
+            app.sliders["orbitTimeline"].adjust(toNormalizedSliderPosition:0.18+Double(iteration)*0.06)
+            app.buttons["playOrbit"].tap()
+            close.tap()
+            XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:3),"Close must work during playback and queued calculations")
+            if iteration<2 { app.buttons["openOrbits"].tap() }
+        }
+    }
 }

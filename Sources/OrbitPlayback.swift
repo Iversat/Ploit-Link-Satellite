@@ -4,93 +4,112 @@ import Combine
 @MainActor final class OrbitPlayback: ObservableObject {
     @Published var selectedID = 25544
     @Published var showAll = true
-    @Published var showGround = false
+    @Published var showGround = false { didSet { renderFeed.setGround(showGround) } }
     @Published var date = Date()
     @Published var live = true
     @Published var playing = false
-    @Published var speed: Double = 60
+    @Published var speed: Double = 60 { didSet { reanchor(); calculate() } }
     @Published var states: [Int:OrbitalState] = [:]
     @Published var paths: [Int:OrbitalTrajectory] = [:]
     @Published var pathDates: [Int:Date] = [:]
     @Published var message: String?
     @Published var focus = 0
-    private(set) var anchor = Date()
-    private var elements: [Int:Elements] = [:]
+    let renderFeed=OrbitRenderFeed()
+    private(set) var anchor=Date()
+    private(set) var active=false
+    private(set) var interacting=false
+    private var clock=OrbitClock(date:Date())
+    private var elements: [Int:Elements]=[:]
+    private var tracks: [Int:OrbitMotion]=[:]
     private let engine=OrbitEngine()
     private var calculation: Task<Void,Never>?
     private var requestID=UUID()
-    private var previousWall=Date()
-    private(set) var interacting=false
-    func setInteracting(_ value: Bool) {
-        interacting=value
-        if value { calculation?.cancel(); requestID=UUID() }
-        else { previousWall=Date(); if live { date=previousWall }; calculate() }
-    }
-    private var revision: [Int:Elements] = [:]
     var offset: Double { date.timeIntervalSince(anchor) }
     var visibleIDs: [Int] { showAll ? elements.keys.sorted() : [selectedID] }
+    private var rate: Double { interacting || !active ? 0 : live ? 1 : playing ? speed : 0 }
+    private func publishClock() { renderFeed.update(clock:clock,tracks:tracks,pathDates:pathDates) }
+    private func reanchor(at value: Date? = nil) {
+        date=value ?? clock.value()
+        clock=OrbitClock(date:date,rate:rate,limit:anchor.addingTimeInterval(48*3600))
+        if active { publishClock() }
+    }
+    private func cancelCalculation() { requestID=UUID(); calculation?.cancel(); calculation=nil }
+    func setInteracting(_ value: Bool) {
+        guard active,interacting != value else { return }
+        let current=clock.value(); interacting=value
+        reanchor(at:live && !value ? Date():current)
+        if value { cancelCalculation() } else { calculate() }
+    }
     func configure(elements: [Int:Elements], selectedID: Int, initialDate: Date?) {
-        self.selectedID=selectedID; anchor=Date(); date=initialDate ?? anchor
-        live=initialDate == nil; previousWall=Date()
-        states=[:]; focus+=1
-        updateElements(elements)
-        // The date can change while the TLE set stays identical (opening a pass).
-        calculate()
+        cancelCalculation(); active=true; interacting=false; playing=false
+        self.selectedID=selectedID; anchor=Date(); live=initialDate == nil
+        self.elements=elements; tracks=[:]; states=[:]; paths=[:]; pathDates=[:]; focus+=1
+        reanchor(at:initialDate ?? anchor); calculate()
     }
     func updateElements(_ values: [Int:Elements]) {
-        guard values != revision else { return }
-        revision=values; elements=values
-        paths=[:]; pathDates=[:]; calculate()
+        guard active,values != elements else { return }
+        cancelCalculation(); elements=values; tracks=[:]; paths=[:]; pathDates=[:]
+        publishClock(); calculate()
     }
     func scrub(_ offset: Double) {
-        live=false; playing=false
-        date=anchor.addingTimeInterval(min(48*3600,max(-6*3600,offset))); states=[:]; calculate()
+        guard active else { return }
+        live=false; playing=false; cancelCalculation()
+        reanchor(at:anchor.addingTimeInterval(min(48*3600,max(-6*3600,offset))))
+        states=[:]; calculate()
     }
     func jump(to date: Date) { scrub(date.timeIntervalSince(anchor)) }
-    func now() { live=true; playing=false; anchor=Date(); date=anchor; calculate() }
+    func now() {
+        guard active else { return }
+        cancelCalculation(); live=true; playing=false; anchor=Date(); reanchor(at:anchor); calculate()
+    }
     func togglePlayback() {
-        if playing { playing=false } else { live=false; playing=true; previousWall=Date() }
+        guard active else { return }
+        let current=clock.value(); live=false; playing.toggle(); reanchor(at:current); calculate()
     }
     func pulse() {
-        guard !interacting else { return }
-        let wall=Date(),elapsed=min(1,max(0,wall.timeIntervalSince(previousWall)))
-        previousWall=wall
-        if live { date=wall }
-        else if playing {
-            date=min(anchor.addingTimeInterval(48*3600),date.addingTimeInterval(elapsed*speed))
-            if offset>=48*3600 { playing=false }
-        } else { return }
+        guard active,!interacting else { return }
+        date=clock.value()
+        if offset>=48*3600,playing { playing=false; reanchor(at:date) }
         calculate()
     }
     func calculate() {
-        guard !interacting else { return }
-        calculation?.cancel()
-        let token=UUID(),date=self.date,ids=visibleIDs
-        requestID=token
-        // Do not present a previous instant's marker after a scrub.
+        guard active,!interacting else { return }
+        let instant=clock.value(),ids=visibleIDs
+        let available=Dictionary(uniqueKeysWithValues:ids.compactMap { id in tracks[id]?.state(at:instant).map { (id,$0) } })
+        if !available.isEmpty { states=available }
+        guard calculation == nil else { return } // Never queue a new job every timer tick.
+        let lookAhead=max(30,rate*3),duration=max(120,rate*12)
+        let needed=ids.filter { id in
+            guard let track=tracks[id] else { return true }
+            return track.state(at:instant) == nil || track.end.timeIntervalSince(instant)<lookAhead
+        }
+        let pathNeeded=ids.filter { pathDates[$0].map { abs($0.timeIntervalSince(instant))>900 } ?? true }
+        guard !needed.isEmpty || !pathNeeded.isEmpty else { return }
+        let token=UUID(),values=elements; requestID=token
         calculation=Task {
-            var next: [Int:OrbitalState]=[:]
-            var nextPaths=paths, nextDates=pathDates
-            var pathsChanged=false
+            defer { if requestID==token { calculation=nil } }
+            var nextTracks=tracks,nextPaths=paths,nextDates=pathDates,pathsChanged=false
             for id in ids {
-                guard !Task.isCancelled, requestID==token else { return }
-                guard let tle=elements[id], tle.ageDays(at:date)<=14 else { continue }
-                if let state=try? await engine.state(elements:tle,date:date) { next[id]=state }
-                guard !Task.isCancelled, requestID==token else { return }
-                if pathDates[id].map({abs($0.timeIntervalSince(date))>30}) ?? true {
-                    if let path=try? await engine.trajectory(elements:tle,date:date) {
-                        guard !Task.isCancelled, requestID==token else { return }
-                        nextPaths[id]=path; nextDates[id]=date; pathsChanged=true
-                    }
+                guard !Task.isCancelled,requestID==token,active else { return }
+                guard let tle=values[id],tle.ageDays(at:instant)<=14 else { continue }
+                if needed.contains(id),let motion=try? await engine.motion(elements:tle,date:instant,seconds:duration) { nextTracks[id]=motion }
+                guard !Task.isCancelled,requestID==token,active else { return }
+                if pathNeeded.contains(id),let path=try? await engine.trajectory(elements:tle,date:instant) {
+                    nextPaths[id]=path; nextDates[id]=instant; pathsChanged=true
                 }
             }
-            guard !Task.isCancelled, requestID==token else { return }
+            guard !Task.isCancelled,requestID==token,active else { return }
+            tracks=nextTracks
             if pathsChanged { paths=nextPaths; pathDates=nextDates }
-            states=next
-            message=next.isEmpty ? "Обновите данные орбит для выбранного времени" : nil
+            let current=clock.value()
+            states=Dictionary(uniqueKeysWithValues:ids.compactMap { id in tracks[id]?.state(at:current).map { (id,$0) } })
+            message=states.isEmpty ? "Обновите данные орбит для выбранного времени" : nil
+            publishClock()
         }
     }
-    func stop() { calculation?.cancel() }
+    func stop() {
+        active=false; cancelCalculation(); renderFeed.stop(); playing=false
+    }
 }
 
 enum OrbitPalette {
@@ -99,6 +118,7 @@ enum OrbitPalette {
 
 struct OrbitExplorerView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
     @Binding var isPresented: Bool
     @StateObject private var playback=OrbitPlayback()
     @State private var headerHeight: CGFloat=64
@@ -120,7 +140,7 @@ struct OrbitExplorerView: View {
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
                            showAll:playback.showAll,showGround:playback.showGround,
-                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing,
+                           observer:model.observer,focus:playback.focus,renderFeed:playback.renderFeed,
                            contentInsets:UIEdgeInsets(top:geometry.safeAreaInsets.top+headerHeight+8,left:0,
                                                       bottom:geometry.safeAreaInsets.bottom+controlsHeight+8,right:0),
                            onInteraction:playback.setInteracting) { id in
@@ -151,6 +171,9 @@ struct OrbitExplorerView: View {
         .task {
             var date=initialDate
             #if DEBUG
+            let arguments=ProcessInfo.processInfo.arguments
+            if arguments.contains("--ui-screenshot-orbits-day") { date=ISO8601DateFormatter().date(from:"2026-10-21T12:00:00Z") }
+            if arguments.contains("--ui-screenshot-orbits-night") { date=ISO8601DateFormatter().date(from:"2026-10-21T00:00:00Z") }
             if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-forecast") {
                 for _ in 0..<20 {
                     if model.session(for:model.selectedID) != nil { break }
@@ -159,12 +182,19 @@ struct OrbitExplorerView: View {
                 date=model.session(for:model.selectedID)?.riseDate ?? Date().addingTimeInterval(3600)
             }
             #endif
+            guard !Task.isCancelled,isPresented else { return }
             playback.configure(elements:model.fleetElements,selectedID:initialSatelliteID ?? model.selectedID,initialDate:date)
             model.refreshSessions()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-playback") {
+                playback.speed=300; playback.togglePlayback()
+            }
+            #endif
         }
         .onChange(of:model.fleetElements) { _,values in playback.updateElements(values) }
         .onChange(of:playback.showAll) { _,_ in playback.calculate() }
-        .onReceive(timer) { _ in playback.pulse() }
+        .onReceive(timer) { _ in if isPresented && scenePhase == .active { playback.pulse() } }
+        .onChange(of:scenePhase) { _,phase in playback.setInteracting(phase != .active) }
         .onDisappear { playback.stop() }
         .preferredColorScheme(.dark)
     }
@@ -243,7 +273,7 @@ struct OrbitExplorerView: View {
                     .accessibilityLabel(playback.playing ? "Пауза":"Воспроизвести").accessibilityIdentifier("playOrbit")
                 Menu {
                     ForEach([1.0,60,300],id:\.self) { speed in Button("×\(Int(speed))") { playback.speed=speed } }
-                } label: { Text("×\(Int(playback.speed))").font(.system(size:13,weight:.medium)).monospacedDigit() }
+                } label: { Text("×\(Int(playback.speed))").font(.system(size:13,weight:.medium)).monospacedDigit() }.accessibilityIdentifier("orbitSpeed")
                 Spacer()
                 Button { playback.showGround.toggle() } label: { Text(playback.showGround ? "Трасса":"Орбита").font(.system(size:13,weight:.medium)) }.accessibilityIdentifier("toggleGroundTrack")
                 Button { playback.now() } label: { Text("Сейчас").font(.system(size:13,weight:.semibold)).padding(.horizontal,14).frame(height:34).background(.white.opacity(0.12),in:Capsule()) }.accessibilityIdentifier("orbitNow")

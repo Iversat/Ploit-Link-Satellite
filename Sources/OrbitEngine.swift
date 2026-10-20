@@ -59,6 +59,14 @@ actor OrbitEngine {
               js.exception == nil, let data=json.data(using:.utf8) else { throw OrbitError.propagation }
         return try JSONDecoder().decode(OrbitalTrajectory.self,from:data)
     }
+    func motion(elements: Elements,date: Date,seconds: Double) throws -> OrbitMotion {
+        try Task.checkCancellation()
+        let js=try prepare(elements),step=5.0
+        guard let json=js.objectForKeyedSubscript("motionJSON")?.call(withArguments:[date.timeIntervalSince1970*1000,seconds,step])?.toString(),
+              js.exception == nil,let data=json.data(using:.utf8) else { throw OrbitError.propagation }
+        try Task.checkCancellation()
+        return OrbitMotion(start:date,step:step,samples:try JSONDecoder().decode([OrbitalState].self,from:data))
+    }
 }
 
 actor ElementStore {

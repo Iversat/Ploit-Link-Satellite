@@ -17,47 +17,36 @@ struct OrbitScene: UIViewRepresentable {
     var showGround: Bool
     var observer: Observer?
     var focus: Int
-    var animated: Bool
+    var renderFeed: OrbitRenderFeed
     var contentInsets: UIEdgeInsets
     var onInteraction: (Bool)->Void
     var onSelect: (Int)->Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
         let view=GlobeSceneView()
-        view.backgroundColor = .black; view.antialiasingMode = .multisampling2X
+        view.backgroundColor = .black; view.antialiasingMode = .multisampling4X
         view.contentScaleFactor=UIScreen.main.nativeScale
-        view.preferredFramesPerSecond=ProcessInfo.processInfo.isLowPowerModeEnabled ? 30:60; view.allowsCameraControl=false
+        view.highRefresh=true; view.allowsCameraControl=false
         let scene=SCNScene(),root=scene.rootNode
         let sphere=SCNSphere(radius:1); sphere.segmentCount=128
-        let earth=SCNMaterial(); earth.lightingModel = .constant
-        EarthTextures.apply(to:earth,in:view); earth.diffuse.intensity=0.6
-        earth.emission.intensity=0.8
+        let earth=SCNMaterial()
+        EarthTextures.apply(to:earth,in:view); EarthLighting.configure(earth)
         sphere.firstMaterial=earth
-        let globe=SCNNode(geometry:sphere); globe.scale=SCNVector3(1,0.996647,1); root.addChildNode(globe)
-        let air=SCNSphere(radius:1.008); air.segmentCount=96
-        let material=SCNMaterial(); material.lightingModel = .constant; material.diffuse.contents=UIColor.clear
-        material.blendMode = .add; material.writesToDepthBuffer=false
-        material.shaderModifiers=[.fragment:"float rim=pow(1.0-abs(dot(normalize(_surface.normal),normalize(_surface.view))),5.0); _output.color=float4(0.08,0.32,0.7,1.0)*rim*0.55;"]
-        air.firstMaterial=material
-        let atmosphere=SCNNode(geometry:air); atmosphere.scale=globe.scale; root.addChildNode(atmosphere)
+        let globe=SCNNode(geometry:sphere); globe.name="earth"
+        globe.scale=SCNVector3(1,0.996647,1); root.addChildNode(globe)
         let camera=SCNNode(); camera.name="camera"; camera.camera=SCNCamera()
         camera.position=SCNVector3(0,0,4.0); camera.camera?.fieldOfView=43
         camera.camera?.projectionDirection = .vertical
-        camera.camera?.zNear=0.01; camera.camera?.zFar=100
+        camera.camera?.zNear=0.1; camera.camera?.zFar=100
         // Fixed turntable hierarchy. Never derive "up" from the previous camera pose.
         let yaw=SCNNode(); yaw.name="longitudePivot"
         let pitch=SCNNode(); pitch.name="latitudePivot"
         root.addChildNode(yaw); yaw.addChildNode(pitch); pitch.addChildNode(camera)
-        let stars=(0..<350).map { i -> SCNVector3 in
-            let y=1-2*Double(i)/350,angle=Double(i)*2.3999632297,r=sqrt(1-y*y)
-            return SCNVector3(Float(25*r*cos(angle)),Float(25*y),Float(25*r*sin(angle)))
-        }
-        let starElement=SCNGeometryElement(indices:Array(0..<Int32(stars.count)),primitiveType:.point)
-        starElement.pointSize=1.5; starElement.minimumPointScreenSpaceRadius=0.5; starElement.maximumPointScreenSpaceRadius=1
-        let starGeometry=SCNGeometry(sources:[SCNGeometrySource(vertices:stars)],elements:[starElement])
-        let starMaterial=SCNMaterial(); starMaterial.lightingModel = .constant; starMaterial.diffuse.contents=UIColor(white:0.6,alpha:1)
-        starGeometry.firstMaterial=starMaterial; root.addChildNode(SCNNode(geometry:starGeometry))
+        StarField.add(to:root)
         view.scene=scene; view.pointOfView=camera; view.isPlaying=true
+        view.rendersContinuously=true
+        context.coordinator.feed=renderFeed
+        view.delegate=context.coordinator
         context.coordinator.view=view
         context.coordinator.onInteraction=onInteraction
         view.layoutCamera = { [weak coordinator=context.coordinator] in coordinator?.applyCamera() }
@@ -77,6 +66,8 @@ struct OrbitScene: UIViewRepresentable {
         if coordinator.contentInsets != contentInsets {
             coordinator.contentInsets=contentInsets; coordinator.applyCamera()
         }
+        SCNTransaction.begin(); SCNTransaction.disableActions=true
+        defer { SCNTransaction.commit() }
         let visible=Set(showAll ? ids:[selectedID])
         for id in ids {
             let name="sat-\(id)",pathName="path-\(id)"
@@ -97,11 +88,10 @@ struct OrbitScene: UIViewRepresentable {
                 label.constraints=[SCNBillboardConstraint()]; marker.addChildNode(label); root.addChildNode(marker)
             }
             marker.isHidden=false
-            if coordinator.positions[id] != state.position {
-                SCNTransaction.begin()
-                SCNTransaction.animationDuration=animated && !UIAccessibility.isReduceMotionEnabled ? 0.48:0
+            // Renderer samples the buffered orbit at every display frame, with no
+            // half-second easing/restart and no JavaScript on the rendering thread.
+            if coordinator.positions[id] == nil {
                 marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
-                SCNTransaction.commit()
                 coordinator.positions[id]=state.position
             }
             marker.scale=SCNVector3(selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85,selectedID==id ? 1.15:0.85)
@@ -153,13 +143,41 @@ struct OrbitScene: UIViewRepresentable {
             if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-zoomed") {
                 coordinator.camera=GlobeCamera(yaw:45,pitch:24,zoom:1.65)
             }
+            if ProcessInfo.processInfo.arguments.contains(where:{["--ui-screenshot-orbits-day","--ui-screenshot-orbits-night","--ui-screenshot-orbits-playback"].contains($0)}) {
+                coordinator.camera=GlobeCamera(yaw:45,pitch:24,zoom:1)
+            }
             #endif
             coordinator.applyCamera()
             coordinator.lastFocus=focus; coordinator.didFocus=true
         }
         view.setNeedsDisplay()
     }
-    final class Coordinator: NSObject {
+    static func dismantleUIView(_ view: SCNView,coordinator: Coordinator) {
+        coordinator.feed?.stop()
+        view.isPlaying=false; view.rendersContinuously=false; view.delegate=nil
+        (view as? GlobeSceneView)?.layoutCamera=nil
+        coordinator.onInteraction=nil; coordinator.onSelect=nil
+        // Release scene objects after rendering has stopped, not during a draw.
+        view.scene=nil
+    }
+    final class Coordinator: NSObject, SCNSceneRendererDelegate {
+        var feed: OrbitRenderFeed?
+        func renderer(_ renderer: SCNSceneRenderer,updateAtTime time: TimeInterval) {
+            guard let frame=feed?.snapshot(),frame.active,
+                  let root=renderer.scene?.rootNode,let camera=renderer.pointOfView else { return }
+            let date=frame.clock.value()
+            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            for (id,track) in frame.tracks {
+                if let state=track.state(at:date),let marker=root.childNode(withName:"sat-\(id)",recursively:false) {
+                    marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
+                }
+                if let pathDate=frame.pathDates[id],let path=root.childNode(withName:"path-\(id)",recursively:false) {
+                    path.eulerAngles.y=frame.ground ? 0 : Float(-SolarPosition.earthRate*date.timeIntervalSince(pathDate))
+                }
+            }
+            if let globe=root.childNode(withName:"earth",recursively:false) { EarthLighting.update(globe:globe,camera:camera,date:date) }
+            SCNTransaction.commit()
+        }
         var onSelect: ((Int)->Void)?
         var lastFocus = -1
         var didFocus=false

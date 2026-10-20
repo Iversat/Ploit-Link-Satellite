@@ -62,9 +62,29 @@ import MetalKit
 }
 
 class EarthRenderView: SCNView {
+    var highRefresh=false { didSet { updateFrameRate() } }
+    private var powerObserver: NSObjectProtocol?
+    private var thermalObserver: NSObjectProtocol?
+    static func targetFPS(maximum: Int,lowPower: Bool,thermal: ProcessInfo.ThermalState) -> Int {
+        if lowPower || thermal == .serious || thermal == .critical { return 30 }
+        return maximum>=120 ? 120:60
+    }
+    func updateFrameRate() {
+        let maximum=window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
+        preferredFramesPerSecond=highRefresh ? Self.targetFPS(maximum:maximum,lowPower:ProcessInfo.processInfo.isLowPowerModeEnabled,thermal:ProcessInfo.processInfo.thermalState):30
+    }
     override func didMoveToWindow() {
         super.didMoveToWindow()
         // Match the display instead of stretching a 2x render target on 3x phones.
         contentScaleFactor=window?.screen.nativeScale ?? UIScreen.main.nativeScale
+        updateFrameRate()
+        if powerObserver == nil {
+            powerObserver=NotificationCenter.default.addObserver(forName:.NSProcessInfoPowerStateDidChange,object:nil,queue:.main) { [weak self] _ in self?.updateFrameRate() }
+            thermalObserver=NotificationCenter.default.addObserver(forName:ProcessInfo.thermalStateDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.updateFrameRate() }
+        }
+    }
+    deinit {
+        if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
+        if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
     }
 }
