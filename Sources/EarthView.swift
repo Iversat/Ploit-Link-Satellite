@@ -43,20 +43,21 @@ struct EarthView: UIViewRepresentable {
         scene.rootNode.addChildNode(camera)
         view.scene = scene
         view.pointOfView = camera
-        view.startFrameUpdates { [weak view] in
-            guard let view,let globe=view.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=view.pointOfView else { return }
-            SCNTransaction.begin(); SCNTransaction.disableActions=true
-            EarthLighting.update(globe:globe,camera:camera,date:Date())
-            SCNTransaction.commit(); view.setNeedsDisplay()
-        }
+        EarthLighting.update(globe:globe,camera:camera,date:Date())
         view.isPlaying = false
         return view
     }
     static func dismantleUIView(_ view: SCNView,coordinator: Coordinator) {
-        (view as? EarthRenderView)?.stopFrameUpdates()
         view.isPlaying=false; view.delegate=nil; view.scene=nil
     }
     func updateUIView(_ uiView: SCNView, context: Context) {
+        // The mostly static home backdrop needs no second continuous frame loop.
+        // Update its sunlight with the regular model refresh, on the main thread.
+        if let globe=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=uiView.pointOfView {
+            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            EarthLighting.update(globe:globe,camera:camera,date:Date())
+            SCNTransaction.commit()
+        }
         uiView.setNeedsDisplay()
         let previous=context.coordinator
         if let lat=previous.latitude, let lon=previous.longitude,
