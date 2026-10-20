@@ -156,11 +156,11 @@ final class PointingFlowTests: XCTestCase {
             XCTAssertTrue(close.waitForExistence(timeout:15))
             let scene=app.otherElements["orbitScene"]
             XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
-            if iteration>0 {
-                app.buttons["orbitSpeed"].tap()
-                app.buttons.matching(NSPredicate(format:"label == %@ AND identifier != %@","×300","orbitSpeed")).firstMatch.tap()
-                if app.buttons["playOrbit"].label != "Пауза" { app.buttons["playOrbit"].tap() }
-            }
+            // The launch fixture starts each newly presented explorer at x300.
+            // Keep this stress case focused on active playback and dismissal;
+            // opening an already-selected contextual menu adds no coverage here.
+            XCTAssertEqual(app.buttons["orbitSpeed"].label,"×300")
+            XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
             let date=app.staticTexts["orbitDate"],before=date.label
             let changes=expectation(for:NSPredicate(format:"label != %@",before),evaluatedWith:date)
             XCTAssertEqual(XCTWaiter.wait(for:[changes],timeout:4),.completed)
