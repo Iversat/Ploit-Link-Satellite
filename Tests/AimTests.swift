@@ -1,7 +1,28 @@
 import XCTest
+import SceneKit
 @testable import PloitSatellite
 
 final class AimTests: XCTestCase {
+    func testFullScreenFrustumFitsGlobeBetweenFloatingPanels() {
+        // Compact SE and a 3x Pro Max, with differently sized floating controls.
+        for (size,insets) in [(CGSize(width:375,height:667),UIEdgeInsets(top:88,left:0,bottom:342,right:0)),
+                              (CGSize(width:440,height:956),UIEdgeInsets(top:140,left:0,bottom:390,right:0))] {
+            let framing=GlobeFraming(size:size,insets:insets,zoom:1)
+            let p=framing.projection
+            let projectedCenterY=(1+Double(p.m32))*Double(size.height)/2
+            let visibleCenter=(Double(insets.top)+Double(size.height-insets.bottom))/2
+            XCTAssertEqual(projectedCenterY,visibleCenter,accuracy:0.001)
+            let silhouetteSlope=1/sqrt(framing.distance*framing.distance-1)
+            let radius=Double(p.m22)*silhouetteSlope*Double(size.height)/2
+            XCTAssertGreaterThan(projectedCenterY-radius,Double(insets.top))
+            XCTAssertLessThan(projectedCenterY+radius,Double(size.height-insets.bottom))
+            XCTAssertLessThan(radius,Double(size.width)/2)
+            let enlarged=GlobeFraming(size:size,insets:insets,zoom:1.65)
+            XCTAssertLessThan(enlarged.distance,framing.distance)
+            XCTAssertEqual(enlarged.projection.m32,p.m32) // Zoom does not move the centre.
+            XCTAssertGreaterThan(enlarged.distance,1.01) // Camera stays outside Earth.
+        }
+    }
     @MainActor func testAlignmentRequiresBothSkyAnglesAndOpenSkyConfirmation() throws {
         let model=AppModel()
         let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))

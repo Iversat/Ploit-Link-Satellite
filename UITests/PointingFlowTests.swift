@@ -96,6 +96,8 @@ final class PointingFlowTests: XCTestCase {
         XCTAssertTrue(timeline.waitForExistence(timeout:15))
         let scene=app.otherElements["orbitScene"]
         XCTAssertTrue(scene.waitForExistence(timeout:5))
+        XCTAssertEqual(scene.frame.minY,app.windows.firstMatch.frame.minY,accuracy:1)
+        XCTAssertEqual(scene.frame.maxY,app.windows.firstMatch.frame.maxY,accuracy:1,"The globe must render behind the floating panels, without an internal rectangular crop.")
         let before=scene.value as? String
         func component(_ key: String) -> String? {
             let parts=(scene.value as? String ?? "").split(separator:" ").map(String.init)
@@ -103,11 +105,11 @@ final class PointingFlowTests: XCTestCase {
             return parts[index+1]
         }
         let oldPitch=component("pitch")
-        scene.swipeLeft()
+        scene.coordinate(withNormalizedOffset:CGVector(dx:0.8,dy:0.32)).press(forDuration:0.05,thenDragTo:scene.coordinate(withNormalizedOffset:CGVector(dx:0.2,dy:0.32)))
         XCTAssertNotEqual(scene.value as? String,before)
         XCTAssertEqual(component("pitch"),oldPitch)
         let oldYaw=component("yaw")
-        scene.swipeUp()
+        scene.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.42)).press(forDuration:0.05,thenDragTo:scene.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.22)))
         XCTAssertEqual(component("yaw"),oldYaw)
         XCTAssertTrue((scene.value as? String ?? "").contains("center 0 0"))
         scene.pinch(withScale:1.2,velocity:1)

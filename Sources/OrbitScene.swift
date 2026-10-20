@@ -1,7 +1,7 @@
 import SwiftUI
 import SceneKit
 
-final class GlobeSceneView: SCNView {
+final class GlobeSceneView: EarthRenderView {
     var layoutCamera: (() -> Void)?
     override func layoutSubviews() { super.layoutSubviews(); layoutCamera?() }
 }
@@ -18,22 +18,23 @@ struct OrbitScene: UIViewRepresentable {
     var observer: Observer?
     var focus: Int
     var animated: Bool
+    var contentInsets: UIEdgeInsets
     var onInteraction: (Bool)->Void
     var onSelect: (Int)->Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
         let view=GlobeSceneView()
         view.backgroundColor = .black; view.antialiasingMode = .multisampling2X
-        view.contentScaleFactor=min(2,UIScreen.main.scale)
+        view.contentScaleFactor=UIScreen.main.nativeScale
         view.preferredFramesPerSecond=ProcessInfo.processInfo.isLowPowerModeEnabled ? 30:60; view.allowsCameraControl=false
         let scene=SCNScene(),root=scene.rootNode
-        let sphere=SCNSphere(radius:1); sphere.segmentCount=64
+        let sphere=SCNSphere(radius:1); sphere.segmentCount=128
         let earth=SCNMaterial(); earth.lightingModel = .constant
-        earth.diffuse.contents=UIImage(named:"earth-day.jpg"); earth.diffuse.intensity=0.6
-        earth.emission.contents=UIImage(named:"earth-night.jpg"); earth.emission.intensity=0.8
+        EarthTextures.apply(to:earth); earth.diffuse.intensity=0.6
+        earth.emission.intensity=0.8
         sphere.firstMaterial=earth
         let globe=SCNNode(geometry:sphere); globe.scale=SCNVector3(1,0.996647,1); root.addChildNode(globe)
-        let air=SCNSphere(radius:1.012); air.segmentCount=40
+        let air=SCNSphere(radius:1.008); air.segmentCount=96
         let material=SCNMaterial(); material.lightingModel = .constant; material.diffuse.contents=UIColor.clear
         material.blendMode = .add; material.writesToDepthBuffer=false
         material.shaderModifiers=[.fragment:"float rim=pow(1.0-abs(dot(normalize(_surface.normal),normalize(_surface.view))),5.0); _output.color=float4(0.08,0.32,0.7,1.0)*rim*0.55;"]
@@ -73,6 +74,9 @@ struct OrbitScene: UIViewRepresentable {
     func updateUIView(_ view: SCNView,context:Context) {
         guard let root=view.scene?.rootNode else { return }
         let coordinator=context.coordinator; coordinator.onSelect=onSelect; coordinator.onInteraction=onInteraction
+        if coordinator.contentInsets != contentInsets {
+            coordinator.contentInsets=contentInsets; coordinator.applyCamera()
+        }
         let visible=Set(showAll ? ids:[selectedID])
         for id in ids {
             let name="sat-\(id)",pathName="path-\(id)"
@@ -145,6 +149,11 @@ struct OrbitScene: UIViewRepresentable {
             coordinator.camera.yaw=Double(atan2(point.sceneX,point.sceneZ))*180 / .pi
             coordinator.camera.pitch=min(85,max(-85,Double(asin(point.sceneY/length))*180 / .pi))
             coordinator.camera.zoom=1
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-orbits-zoomed") {
+                coordinator.camera=GlobeCamera(yaw:45,pitch:24,zoom:1.65)
+            }
+            #endif
             coordinator.applyCamera()
             coordinator.lastFocus=focus; coordinator.didFocus=true
         }
@@ -161,16 +170,16 @@ struct OrbitScene: UIViewRepresentable {
         var onInteraction: ((Bool)->Void)?
         var camera=GlobeCamera()
         var drag=GlobeDrag()
+        var contentInsets=UIEdgeInsets.zero
         func applyCamera() {
             guard let view, let node=view.pointOfView,view.bounds.width>0,view.bounds.height>0 else { return }
-            let halfVertical=43.0 * Double.pi/360
-            let halfHorizontal=atan(tan(halfVertical)*Double(view.bounds.width/view.bounds.height))
-            let distance=1.22/sin(min(halfVertical,halfHorizontal))/camera.zoom
+            let framing=GlobeFraming(size:view.bounds.size,insets:contentInsets,zoom:camera.zoom)
             SCNTransaction.begin(); SCNTransaction.disableActions=true
             node.parent?.parent?.eulerAngles=SCNVector3(0,Float(camera.yaw * .pi/180),0)
             node.parent?.eulerAngles=SCNVector3(Float(-camera.pitch * .pi/180),0,0)
             node.eulerAngles=SCNVector3Zero
-            node.position=SCNVector3(0,0,Float(distance))
+            node.position=SCNVector3(0,0,Float(framing.distance))
+            node.camera?.projectionTransform=framing.projection
             SCNTransaction.commit()
             #if DEBUG
             view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0",camera.yaw,camera.pitch,camera.zoom)

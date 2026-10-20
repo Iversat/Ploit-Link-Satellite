@@ -49,7 +49,7 @@ jobs:
           xcrun simctl privacy "$DEVICE" grant location ru.ploit.satellite
           mkdir -p build/screenshots
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-          for SCENE in home settings earth-unavailable radar-unavailable earth-skycheck catalogue orbits orbits-forecast radar-top-seeking radar-top-aligned radar-back-seeking radar-back-aligned earth-back-aligned intro-top intro-back; do
+          for SCENE in home settings earth-unavailable radar-unavailable earth-skycheck catalogue orbits orbits-forecast orbits-zoomed radar-top-seeking radar-top-aligned radar-back-seeking radar-back-aligned earth-back-aligned intro-top intro-back; do
             xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
             xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
             sleep 3
@@ -69,6 +69,10 @@ jobs:
             xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-earth-back-aligned
             sleep 3
             xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-earth.png"
+            xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+            xcrun simctl launch "$DEVICE" ru.ploit.satellite --ui-screenshot-orbits-zoomed
+            sleep 3
+            xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-orbits-zoomed.png"
             xcrun simctl shutdown "$DEVICE"
           done
       - name: Export test diagnostics

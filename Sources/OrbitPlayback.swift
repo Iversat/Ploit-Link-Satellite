@@ -101,6 +101,8 @@ struct OrbitExplorerView: View {
     @EnvironmentObject var model: AppModel
     @Binding var isPresented: Bool
     @StateObject private var playback=OrbitPlayback()
+    @State private var headerHeight: CGFloat=64
+    @State private var controlsHeight: CGFloat=350
     var initialDate: Date? = nil
     var initialSatelliteID: Int? = nil
     private let timer=Timer.publish(every:0.5,on:.main,in:.common).autoconnect()
@@ -114,20 +116,37 @@ struct OrbitExplorerView: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing:0) {
-                header.padding(.top,6).padding(.bottom,8)
+            ZStack {
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
                            showAll:playback.showAll,showGround:playback.showGround,
-                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing,onInteraction:playback.setInteracting) { id in
+                           observer:model.observer,focus:playback.focus,animated:playback.live || playback.playing,
+                           contentInsets:UIEdgeInsets(top:geometry.safeAreaInsets.top+headerHeight+8,left:0,
+                                                      bottom:geometry.safeAreaInsets.bottom+controlsHeight+8,right:0),
+                           onInteraction:playback.setInteracting) { id in
                     playback.selectedID=id; playback.calculate()
-                }.frame(maxWidth:.infinity,maxHeight:.infinity).clipped().accessibilityIdentifier("orbitScene")
-                    if let message=playback.message {
-                        Text(message).font(.footnote).multilineTextAlignment(.center).padding(12)
-                            .satelliteGlass(in:Capsule()).padding(.horizontal,20)
+                }.ignoresSafeArea().accessibilityIdentifier("orbitScene")
+                // Only the panels receive touches; empty space still rotates the globe.
+                VStack(spacing:0) {
+                    header.padding(.top,6).padding(.bottom,8)
+                        .background(GeometryReader { size in Color.clear.preference(key:OrbitHeaderHeight.self,value:size.size.height) })
+                        .background(alignment:.top) {
+                            LinearGradient(colors:[.black.opacity(0.65),.clear],startPoint:.top,endPoint:.bottom)
+                                .ignoresSafeArea(edges:.top).allowsHitTesting(false)
+                        }
+                    Spacer(minLength:0)
+                    VStack(spacing:10) {
+                        if let message=playback.message {
+                            Text(message).font(.footnote).multilineTextAlignment(.center).padding(12)
+                                .satelliteGlass(in:Capsule()).padding(.horizontal,20)
+                        }
+                        controls(compact:geometry.size.height<740)
+                    }.padding(.bottom,8)
+                        .background(GeometryReader { size in Color.clear.preference(key:OrbitControlsHeight.self,value:size.size.height) })
                     }
-                    controls(compact:geometry.size.height<740).padding(.bottom,8)
             }.background(.black)
+                .onPreferenceChange(OrbitHeaderHeight.self) { headerHeight=$0 }
+                .onPreferenceChange(OrbitControlsHeight.self) { controlsHeight=$0 }
         }
         .task {
             var date=initialDate
@@ -234,4 +253,13 @@ struct OrbitExplorerView: View {
         }.padding(compact ? 16:20).satelliteGlass(in:RoundedRectangle(cornerRadius:28,style:.continuous),clear:true)
             .padding(.horizontal,16).foregroundStyle(.white)
     }
+}
+
+private struct OrbitHeaderHeight: PreferenceKey {
+    static var defaultValue: CGFloat=0
+    static func reduce(value: inout CGFloat,nextValue:()->CGFloat) { value=nextValue() }
+}
+private struct OrbitControlsHeight: PreferenceKey {
+    static var defaultValue: CGFloat=0
+    static func reduce(value: inout CGFloat,nextValue:()->CGFloat) { value=nextValue() }
 }

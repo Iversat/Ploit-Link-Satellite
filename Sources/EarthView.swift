@@ -7,20 +7,19 @@ struct EarthView: UIViewRepresentable {
     final class Coordinator { var latitude: Double?; var longitude: Double? }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
-        let view = SCNView()
+        let view = EarthRenderView()
         view.backgroundColor = .black
         view.isUserInteractionEnabled = false
-        view.antialiasingMode = .multisampling2X
-        view.contentScaleFactor=min(2,UIScreen.main.scale)
+        view.antialiasingMode = .multisampling4X
+        view.contentScaleFactor=UIScreen.main.nativeScale
         view.preferredFramesPerSecond = 30
         let scene = SCNScene()
         let sphere = SCNSphere(radius: 1)
-        sphere.segmentCount = 64
+        sphere.segmentCount = 160
         let material = SCNMaterial()
-        material.diffuse.contents = UIImage(named: "earth-day.jpg")
+        EarthTextures.apply(to:material)
         material.diffuse.intensity = 0.06
-        material.emission.contents = UIImage(named: "earth-night.jpg")
-        material.emission.intensity = 1.4
+        material.emission.intensity = 1.15
         material.shaderModifiers = [.surface: "_surface.emission.rgb *= float3(1.25, 1.0, 0.45);"]
         material.lightingModel = .constant
         sphere.firstMaterial = material
@@ -32,15 +31,15 @@ struct EarthView: UIViewRepresentable {
         globe.eulerAngles = SCNVector3(Float((latitude - 50) * .pi / 180), Float(-longitude * .pi / 180), 0)
         globe.position = SCNVector3(0, -0.60, 0)
         scene.rootNode.addChildNode(globe)
-        let atmosphere = SCNSphere(radius: 1.015)
-        atmosphere.segmentCount = 64
+        let atmosphere = SCNSphere(radius: 1.008)
+        atmosphere.segmentCount = 160
         let glow = SCNMaterial()
         glow.lightingModel = .constant
         glow.diffuse.contents = UIColor.clear
-        glow.isDoubleSided = true
+        glow.isDoubleSided = false
         glow.blendMode = .add
         glow.writesToDepthBuffer = false
-        glow.shaderModifiers = [.fragment: "float rim = pow(1.0 - abs(dot(normalize(_surface.normal), normalize(_surface.view))), 6.0); _output.color = float4(0.10,0.55,1.0,1.0) * rim * 0.85;"]
+        glow.shaderModifiers = [.fragment: "float rim = pow(1.0 - abs(dot(normalize(_surface.normal), normalize(_surface.view))), 8.0); _output.color = float4(0.08,0.40,0.85,1.0) * rim * 0.55;"]
         atmosphere.firstMaterial = glow
         let halo = SCNNode(geometry: atmosphere)
         globe.addChildNode(halo)
@@ -50,9 +49,7 @@ struct EarthView: UIViewRepresentable {
         camera.camera?.projectionDirection = .vertical
         camera.camera?.wantsHDR = true
         camera.camera?.exposureOffset = -0.6
-        camera.camera?.bloomIntensity = 0.25
-        camera.camera?.bloomThreshold = 0.6
-        camera.camera?.bloomBlurRadius = 8
+        camera.camera?.bloomIntensity = 0
         camera.camera?.zNear = 0.01
         camera.position = SCNVector3(0,0,2.3)
         scene.rootNode.addChildNode(camera)
