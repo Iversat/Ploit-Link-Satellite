@@ -105,6 +105,8 @@ final class PointingFlowTests: XCTestCase {
             return parts[index+1]
         }
         let oldPitch=component("pitch")
+        XCTAssertGreaterThan(Double(component("insetTop") ?? "0") ?? 0,app.buttons["closeOrbits"].frame.maxY)
+        XCTAssertGreaterThan(Double(component("insetBottom") ?? "0") ?? 0,app.windows.firstMatch.frame.height-timeline.frame.minY,"Floating panel measurements must reach the camera, including after SwiftUI reduces sibling preferences.")
         scene.coordinate(withNormalizedOffset:CGVector(dx:0.8,dy:0.32)).press(forDuration:0.05,thenDragTo:scene.coordinate(withNormalizedOffset:CGVector(dx:0.2,dy:0.32)))
         XCTAssertNotEqual(scene.value as? String,before)
         XCTAssertEqual(component("pitch"),oldPitch)

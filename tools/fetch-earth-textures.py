@@ -24,5 +24,7 @@ for kind, url in SOURCES.items():
         result = source.resize((8192, 4096), Image.Resampling.LANCZOS)
         destination = ROOT / "Resources" / f"earth-{kind}.jpg"
         result.save(destination, quality=95, subsampling=0, optimize=True)
+        result.resize((2048,1024),Image.Resampling.LANCZOS).save(
+            ROOT / "Resources" / f"earth-{kind}-preview.jpg",quality=88,optimize=True)
         print(kind, source.size, "->", result.size,
               hashlib.sha256(destination.read_bytes()).hexdigest(), flush=True)

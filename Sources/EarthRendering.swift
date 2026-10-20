@@ -3,24 +3,60 @@ import MetalKit
 
 // Share GPU textures between the home scene and orbit explorer. Do not retain a
 // second decoded UIImage for each 8K map, or upload it again for each screen.
-enum EarthTextures {
-    private static let loader = MTLCreateSystemDefaultDevice().map { MTKTextureLoader(device: $0) }
-    private static let day = load("earth-day")
-    private static let night = load("earth-night")
-    private static func load(_ name: String) -> MTLTexture? {
-        guard let url=Bundle.main.url(forResource:name,withExtension:"jpg") else { return nil }
-        return try? loader?.newTexture(URL:url,options:[.SRGB:true,.generateMipmaps:true])
+@MainActor enum EarthTextures {
+    private static var day: MTLTexture?
+    private static var night: MTLTexture?
+    private static var loading=false
+    private struct Pending {
+        weak var material: SCNMaterial?
+        weak var view: SCNView?
     }
-    static func apply(to material: SCNMaterial) {
-        if let day { material.diffuse.contents=day }
-        else { material.diffuse.contents=UIImage(named:"earth-day.jpg") }
-        if let night { material.emission.contents=night }
-        else { material.emission.contents=UIImage(named:"earth-night.jpg") }
+    private static var pending: [Pending]=[]
+    static func apply(to material: SCNMaterial,in view: SCNView) {
         for property in [material.diffuse,material.emission] {
             property.minificationFilter = .linear
             property.magnificationFilter = .linear
             property.mipFilter = .linear
             property.maxAnisotropy = 8
+        }
+        if let day,let night {
+            material.diffuse.contents=day; material.emission.contents=night
+            return
+        }
+        // Show the interface immediately; decode/upload 8K maps off the UI thread.
+        material.diffuse.contents=UIImage(named:"earth-day-preview.jpg")
+        material.emission.contents=UIImage(named:"earth-night-preview.jpg")
+        pending.append(Pending(material:material,view:view))
+        guard !loading else { return }
+        loading=true
+        DispatchQueue.global(qos:.userInitiated).async {
+            guard let device=MTLCreateSystemDefaultDevice() else { return }
+            let loader=MTKTextureLoader(device:device)
+            func load(_ name: String) -> MTLTexture? {
+                guard let url=Bundle.main.url(forResource:name,withExtension:"jpg") else { return nil }
+                return try? loader.newTexture(URL:url,options:[.SRGB:true,.generateMipmaps:true])
+            }
+            let loadedDay=load("earth-day"),loadedNight=load("earth-night")
+            DispatchQueue.main.async {
+                guard let loadedDay,let loadedNight else { loading=false; return }
+                day=loadedDay; night=loadedNight
+                SCNTransaction.begin(); SCNTransaction.disableActions=true
+                for target in pending {
+                    target.material?.diffuse.contents=loadedDay
+                    target.material?.emission.contents=loadedNight
+                    target.view?.setNeedsDisplay()
+                }
+                SCNTransaction.commit()
+                pending=[]; loading=false
+                #if DEBUG
+                // CI waits for actual 8K readiness before taking visual evidence.
+                if ProcessInfo.processInfo.arguments.contains(where:{$0.hasPrefix("--ui-screenshot-")}),
+                   let cache=FileManager.default.urls(for:.cachesDirectory,in:.userDomainMask).first {
+                    try? FileManager.default.createDirectory(at:cache,withIntermediateDirectories:true)
+                    try? Data("8K ready".utf8).write(to:cache.appendingPathComponent("earth-textures-ready"))
+                }
+                #endif
+            }
         }
     }
 }

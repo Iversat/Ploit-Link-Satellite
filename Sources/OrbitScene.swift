@@ -30,7 +30,7 @@ struct OrbitScene: UIViewRepresentable {
         let scene=SCNScene(),root=scene.rootNode
         let sphere=SCNSphere(radius:1); sphere.segmentCount=128
         let earth=SCNMaterial(); earth.lightingModel = .constant
-        EarthTextures.apply(to:earth); earth.diffuse.intensity=0.6
+        EarthTextures.apply(to:earth,in:view); earth.diffuse.intensity=0.6
         earth.emission.intensity=0.8
         sphere.firstMaterial=earth
         let globe=SCNNode(geometry:sphere); globe.scale=SCNVector3(1,0.996647,1); root.addChildNode(globe)
@@ -182,7 +182,7 @@ struct OrbitScene: UIViewRepresentable {
             node.camera?.projectionTransform=framing.projection
             SCNTransaction.commit()
             #if DEBUG
-            view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0",camera.yaw,camera.pitch,camera.zoom)
+            view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0 insetTop %.1f insetBottom %.1f",camera.yaw,camera.pitch,camera.zoom,contentInsets.top,contentInsets.bottom)
             #endif
         }
         @objc func pan(_ gesture: UIPanGestureRecognizer) {

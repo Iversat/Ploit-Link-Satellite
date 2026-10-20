@@ -17,7 +17,7 @@ struct EarthView: UIViewRepresentable {
         let sphere = SCNSphere(radius: 1)
         sphere.segmentCount = 160
         let material = SCNMaterial()
-        EarthTextures.apply(to:material)
+        EarthTextures.apply(to:material,in:view)
         material.diffuse.intensity = 0.06
         material.emission.intensity = 1.15
         material.shaderModifiers = [.surface: "_surface.emission.rgb *= float3(1.25, 1.0, 0.45);"]
