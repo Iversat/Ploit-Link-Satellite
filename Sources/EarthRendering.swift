@@ -61,10 +61,27 @@ import MetalKit
     }
 }
 
+@MainActor private final class EarthFrameTarget: NSObject {
+    weak var view: EarthRenderView?
+    init(_ view: EarthRenderView) { self.view=view }
+    @objc func tick() { view?.advanceFrame() }
+}
+
 class EarthRenderView: SCNView {
     var highRefresh=false { didSet { updateFrameRate() } }
+    private var frameLink: CADisplayLink?
+    private var onFrame: (() -> Void)?
     private var powerObserver: NSObjectProtocol?
     private var thermalObserver: NSObjectProtocol?
+    func startFrameUpdates(_ action: @escaping () -> Void) {
+        stopFrameUpdates(); onFrame=action
+        let target=EarthFrameTarget(self)
+        let link=CADisplayLink(target:target,selector:#selector(EarthFrameTarget.tick))
+        frameLink=link; updateFrameRate()
+        link.add(to:.main,forMode:.common)
+    }
+    func stopFrameUpdates() { frameLink?.invalidate(); frameLink=nil; onFrame=nil }
+    fileprivate func advanceFrame() { onFrame?() }
     static func targetFPS(maximum: Int,lowPower: Bool,thermal: ProcessInfo.ThermalState) -> Int {
         if lowPower || thermal == .serious || thermal == .critical { return 30 }
         return maximum>=120 ? 120:60
@@ -72,6 +89,8 @@ class EarthRenderView: SCNView {
     func updateFrameRate() {
         let maximum=window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
         preferredFramesPerSecond=highRefresh ? Self.targetFPS(maximum:maximum,lowPower:ProcessInfo.processInfo.isLowPowerModeEnabled,thermal:ProcessInfo.processInfo.thermalState):30
+        let fps=Float(preferredFramesPerSecond)
+        frameLink?.preferredFrameRateRange=CAFrameRateRange(minimum:min(60,fps),maximum:fps,preferred:fps)
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -84,6 +103,7 @@ class EarthRenderView: SCNView {
         }
     }
     deinit {
+        frameLink?.invalidate()
         if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
         if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
     }

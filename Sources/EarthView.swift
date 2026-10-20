@@ -4,13 +4,8 @@ import SceneKit
 struct EarthView: UIViewRepresentable {
     var latitude: Double = 35
     var longitude: Double = 35
-    final class Coordinator: NSObject,SCNSceneRendererDelegate {
+    final class Coordinator: NSObject {
         var latitude: Double?; var longitude: Double?
-        func renderer(_ renderer: SCNSceneRenderer,updateAtTime time: TimeInterval) {
-            if let globe=renderer.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=renderer.pointOfView {
-                EarthLighting.update(globe:globe,camera:camera,date:Date())
-            }
-        }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
@@ -48,11 +43,17 @@ struct EarthView: UIViewRepresentable {
         scene.rootNode.addChildNode(camera)
         view.scene = scene
         view.pointOfView = camera
-        view.delegate=context.coordinator
+        view.startFrameUpdates { [weak view] in
+            guard let view,let globe=view.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=view.pointOfView else { return }
+            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            EarthLighting.update(globe:globe,camera:camera,date:Date())
+            SCNTransaction.commit(); view.setNeedsDisplay()
+        }
         view.isPlaying = false
         return view
     }
     static func dismantleUIView(_ view: SCNView,coordinator: Coordinator) {
+        (view as? EarthRenderView)?.stopFrameUpdates()
         view.isPlaying=false; view.delegate=nil; view.scene=nil
     }
     func updateUIView(_ uiView: SCNView, context: Context) {

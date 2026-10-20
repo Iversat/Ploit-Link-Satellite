@@ -61,8 +61,8 @@ struct OrbitScene: UIViewRepresentable {
         view.scene=scene; view.pointOfView=camera; view.isPlaying=true
         view.rendersContinuously=true
         context.coordinator.feed=renderFeed
-        view.delegate=context.coordinator
         context.coordinator.view=view
+        view.startFrameUpdates { [weak coordinator=context.coordinator] in coordinator?.updateFrame() }
         context.coordinator.onInteraction=onInteraction
         view.layoutCamera = { [weak coordinator=context.coordinator] in coordinator?.applyCamera() }
         view.isAccessibilityElement=true; view.accessibilityLabel="Трёхмерная Земля и орбиты спутников. Вращение и масштаб жестами."
@@ -103,8 +103,8 @@ struct OrbitScene: UIViewRepresentable {
                 label.constraints=[SCNBillboardConstraint()]; marker.addChildNode(label); root.addChildNode(marker)
             }
             marker.isHidden=false
-            // Renderer samples the buffered orbit at every display frame, with no
-            // half-second easing/restart and no JavaScript on the rendering thread.
+            // The main-run-loop display link samples the buffered orbit every frame.
+            // All scene mutation stays on the same thread as SwiftUI and gestures.
             if coordinator.positions[id] == nil {
                 marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
                 coordinator.positions[id]=state.position
@@ -170,20 +170,23 @@ struct OrbitScene: UIViewRepresentable {
     }
     static func dismantleUIView(_ view: SCNView,coordinator: Coordinator) {
         coordinator.feed?.stop()
+        (view as? EarthRenderView)?.stopFrameUpdates()
         view.isPlaying=false; view.rendersContinuously=false; view.delegate=nil
         (view as? GlobeSceneView)?.layoutCamera=nil
         coordinator.onInteraction=nil; coordinator.onSelect=nil
         // Release scene objects after rendering has stopped, not during a draw.
         view.scene=nil
     }
-    final class Coordinator: NSObject, SCNSceneRendererDelegate {
+    @MainActor final class Coordinator: NSObject {
         var feed: OrbitRenderFeed?
-        func renderer(_ renderer: SCNSceneRenderer,updateAtTime time: TimeInterval) {
+        func updateFrame() {
             guard let frame=feed?.snapshot(),frame.active,
-                  let root=renderer.scene?.rootNode,let camera=renderer.pointOfView else { return }
+                  let root=view?.scene?.rootNode,let camera=view?.pointOfView else { return }
             let date=frame.clock.value()
-            // SceneKit applies renderer-delegate changes directly to the
-            // presentation tree; do not nest UI transactions in this callback.
+            // Never read/write this node tree from SceneKit's render delegate:
+            // concurrent SwiftUI path replacement caused a reproducible crash.
+            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            defer { SCNTransaction.commit() }
             for (id,track) in frame.tracks {
                 if let state=track.state(at:date),let marker=root.childNode(withName:"sat-\(id)",recursively:false) {
                     marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
