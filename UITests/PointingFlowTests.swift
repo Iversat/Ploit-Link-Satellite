@@ -21,9 +21,12 @@ final class PointingFlowTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["pointingStatus"].label.contains("совпало"))
         button.tap()
         app.buttons["Я снаружи, направление не закрыто"].tap()
-        XCTAssertTrue(app.staticTexts["pointingStatus"].label.contains("совпало"))
+        let status=app.staticTexts["pointingStatus"]
+        let aligned=expectation(for:NSPredicate(format:"label CONTAINS[c] %@","направление совпало"),evaluatedWith:status)
+        XCTAssertEqual(XCTWaiter.wait(for:[aligned],timeout:5),.completed,"Status: \(status.label)\n\(app.debugDescription)")
         button.tap()
-        XCTAssertFalse(app.staticTexts["pointingStatus"].label.contains("совпало"))
+        let revoked=expectation(for:NSPredicate(format:"label CONTAINS[c] %@","проверьте обзор неба"),evaluatedWith:status)
+        XCTAssertEqual(XCTWaiter.wait(for:[revoked],timeout:5),.completed,"Status: \(status.label)")
     }
     func testSettingsOpensRepeatedlyDuringLiveUpdatesFromButtonEdges() {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()

@@ -71,6 +71,12 @@ jobs:
             xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-earth.png"
             xcrun simctl shutdown "$DEVICE"
           done
+      - name: Export test diagnostics
+        if: failure()
+        run: |
+          if [ -d build/Tests.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/Tests.xcresult --output-path build/test-attachments
+          fi
       - name: Upload IPA
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -88,6 +94,7 @@ jobs:
           path: |
             build/screenshots
             build/Tests.xcresult
+            build/test-attachments
             build-device.log
             build-tests.log
           if-no-files-found: warn

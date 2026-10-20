@@ -121,7 +121,8 @@ enum HomePanel: String, Identifiable {
                     look=Look(azimuth:135,elevation:elevation,rangeKm:1200,rangeRate:0,latitude:0,longitude:0,altitudeKm:400)
                     sensors.preview(azimuth:135,elevation:45,axis:axis)
                     let now=Date(); clock=now
-                    let pass=PassWindow(rise:now.addingTimeInterval(600).timeIntervalSince1970,culmination:now.addingTimeInterval(750).timeIntervalSince1970,set:now.addingTimeInterval(900).timeIntervalSince1970,maxElevation:60,inProgress:false)
+                    let unavailable=preview.contains("unavailable")
+                    let pass=PassWindow(rise:now.addingTimeInterval(unavailable ? 600:-60).timeIntervalSince1970,culmination:now.addingTimeInterval(unavailable ? 750:90).timeIntervalSince1970,set:now.addingTimeInterval(unavailable ? 900:240).timeIntervalSince1970,maxElevation:60,inProgress:!unavailable)
                     sessionWindows[selectedID]=[pass]; passes=[pass]
                 }
             }
