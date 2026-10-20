@@ -157,7 +157,8 @@ final class PointingFlowTests: XCTestCase {
             let scene=app.otherElements["orbitScene"]
             XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
             if iteration>0 {
-                app.buttons["orbitSpeed"].tap(); app.buttons["×300"].tap()
+                app.buttons["orbitSpeed"].tap()
+                app.buttons.matching(NSPredicate(format:"label == %@ AND identifier != %@","×300","orbitSpeed")).firstMatch.tap()
                 if app.buttons["playOrbit"].label != "Пауза" { app.buttons["playOrbit"].tap() }
             }
             let date=app.staticTexts["orbitDate"],before=date.label
