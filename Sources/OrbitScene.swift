@@ -166,7 +166,8 @@ struct OrbitScene: UIViewRepresentable {
             guard let frame=feed?.snapshot(),frame.active,
                   let root=renderer.scene?.rootNode,let camera=renderer.pointOfView else { return }
             let date=frame.clock.value()
-            SCNTransaction.begin(); SCNTransaction.disableActions=true
+            // SceneKit applies renderer-delegate changes directly to the
+            // presentation tree; do not nest UI transactions in this callback.
             for (id,track) in frame.tracks {
                 if let state=track.state(at:date),let marker=root.childNode(withName:"sat-\(id)",recursively:false) {
                     marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
@@ -176,7 +177,6 @@ struct OrbitScene: UIViewRepresentable {
                 }
             }
             if let globe=root.childNode(withName:"earth",recursively:false) { EarthLighting.update(globe:globe,camera:camera,date:date) }
-            SCNTransaction.commit()
         }
         var onSelect: ((Int)->Void)?
         var lastFocus = -1
