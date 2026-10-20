@@ -52,6 +52,9 @@ final class PointingFlowTests: XCTestCase {
         let status = app.staticTexts["pointingStatus"]
         XCTAssertTrue(status.waitForExistence(timeout:10))
         XCTAssertEqual(status.label,"НАПРАВЛЕНИЕ СОВПАЛО")
+        let title=app.staticTexts["pointingTitle"]
+        XCTAssertEqual(title.label,"Тренировка")
+        XCTAssertEqual(title.frame.midX,app.windows.firstMatch.frame.midX,accuracy:1,"Title must be centered on screen despite unequal buttons.")
         app.segmentedControls["aimAxis"].buttons["Заднее стекло"].tap()
         expectation(for:NSPredicate(format:"label != %@","НАПРАВЛЕНИЕ СОВПАЛО"),evaluatedWith:status)
         waitForExpectations(timeout:5)
@@ -67,6 +70,7 @@ final class PointingFlowTests: XCTestCase {
         XCTAssertEqual(app.otherElements["rearAimReticle"].value as? String,"Спутник в центре")
         app.buttons["showEarth"].tap()
         XCTAssertTrue(app.buttons["earthPasses"].waitForExistence(timeout:5))
+        XCTAssertEqual(app.staticTexts["pointingTitle"].frame.midX,app.windows.firstMatch.frame.midX,accuracy:1)
         app.buttons["earthPasses"].tap()
         XCTAssertTrue(app.navigationBars["Пролёты"].waitForExistence(timeout:5))
         app.buttons["Готово"].tap()

@@ -1,8 +1,12 @@
 # Ploit Space
 
-| Главный экран и ближайший сеанс | Наведение на спутник | Орбиты и перемотка времени |
-| :---: | :---: | :---: |
-| [<img src="docs/screenshots/home.png" width="250" alt="Главный экран Ploit Space с временем ближайшего сеанса">](docs/screenshots/home.png) | [<img src="docs/screenshots/pointing.png" width="250" alt="Учебное наведение верхней гранью iPhone на спутник">](docs/screenshots/pointing.png) | [<img src="docs/screenshots/orbits.png" width="250" alt="Трёхмерная Земля, орбиты спутников и шкала перемотки времени">](docs/screenshots/orbits.png) |
+<p align="center">
+  <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" width="32%" alt="Главный экран Ploit Space с временем ближайшего сеанса"></a>
+  <a href="docs/screenshots/pointing.png"><img src="docs/screenshots/pointing.png" width="32%" alt="Учебное наведение верхней гранью iPhone на спутник"></a>
+  <a href="docs/screenshots/orbits.png"><img src="docs/screenshots/orbits.png" width="32%" alt="Трёхмерная Земля, орбиты спутников и шкала перемотки времени"></a>
+</p>
+
+**Слева направо:** главный экран и ближайший сеанс · наведение на спутник · орбиты и перемотка времени.
 
 *Скриншоты Ploit Space 1.3.3 из iOS-симулятора. Наведение показано в режиме тренировки. Нажмите на изображение, чтобы открыть его в полном размере.*
 

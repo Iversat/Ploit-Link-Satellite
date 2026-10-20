@@ -177,6 +177,12 @@ struct PointingContent: View {
     }
     private func header(earth: Bool) -> some View {
         SatelliteGlassGroup {
+        ZStack {
+            Text(model.training ? "Тренировка" : model.satellite?.name ?? "Спутник")
+                .font(.system(size:15,weight:.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                .frame(maxWidth:.infinity)
+                .padding(.horizontal,earth ? 56:112)
+                .accessibilityIdentifier("pointingTitle")
         HStack {
             Button {
                 model.pointingStyle = earth ? .radar : .earth
@@ -184,13 +190,12 @@ struct PointingContent: View {
                 Image(systemName:earth ? "scope":"globe.europe.africa").font(.system(size:19,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
             }.buttonStyle(.plain).accessibilityIdentifier(earth ? "showRadar":"showEarth").accessibilityLabel(earth ? "Показать круг":"Показать Землю")
             Spacer(minLength:5)
-            Text(model.training ? "Тренировка" : model.satellite?.name ?? "Спутник").font(.system(size:15,weight:.semibold)).lineLimit(1)
-            Spacer(minLength:5)
             if earth {
                 Button { model.pointingIntro = true } label: { Image(systemName:"info").font(.system(size:19,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true) }.buttonStyle(.plain).accessibilityLabel("Как держать iPhone")
             } else {
                 Button { model.leavePointing() } label: { Text("Завершить").font(.system(size:13,weight:.semibold)).foregroundStyle(Color(red:1,green:0.40,blue:0.38)).padding(.horizontal,16).frame(height:44).satelliteGlass(in:Capsule(),interactive:true,tint:.red.opacity(0.12)) }.buttonStyle(.plain).accessibilityIdentifier("finishPointing")
             }
+        }
         }.foregroundStyle(.white).padding(.horizontal,20).frame(height:44)
         }
     }
