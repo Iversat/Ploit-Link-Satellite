@@ -6,6 +6,21 @@ final class GlobeSceneView: EarthRenderView {
     override func layoutSubviews() { super.layoutSubviews(); layoutCamera?() }
 }
 
+// Keep the epoch attached to its geometry. A newly calculated epoch must never
+// rotate the previous mesh for a frame while SwiftUI is installing the new one.
+final class OrbitPathNode: SCNNode {
+    let epoch: Date
+    let ground: Bool
+    init(geometry: SCNGeometry,epoch: Date,ground: Bool) {
+        self.epoch=epoch; self.ground=ground
+        super.init(); self.geometry=geometry
+    }
+    required init?(coder: NSCoder) {
+        epoch = .distantPast; ground=false
+        super.init(coder:coder)
+    }
+}
+
 struct OrbitScene: UIViewRepresentable {
     var states: [Int:OrbitalState]
     var paths: [Int:OrbitalTrajectory]
@@ -119,7 +134,8 @@ struct OrbitScene: UIViewRepresentable {
                 let geometry=SCNGeometry(sources:[SCNGeometrySource(vertices:points)],elements:[SCNGeometryElement(indices:indices,primitiveType:.line)])
                 let m=SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents=color.withAlphaComponent(selectedID==id ? 0.95:0.35)
                 geometry.firstMaterial=m
-                let node=SCNNode(geometry:geometry); node.name=pathName; root.addChildNode(node)
+                let node=OrbitPathNode(geometry:geometry,epoch:pathDates[id] ?? Date(),ground:showGround)
+                node.name=pathName; root.addChildNode(node)
                 coordinator.pathKeys[id]=key
             }
             root.childNode(withName:pathName,recursively:false)?.isHidden=false
@@ -172,8 +188,8 @@ struct OrbitScene: UIViewRepresentable {
                 if let state=track.state(at:date),let marker=root.childNode(withName:"sat-\(id)",recursively:false) {
                     marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
                 }
-                if let pathDate=frame.pathDates[id],let path=root.childNode(withName:"path-\(id)",recursively:false) {
-                    path.eulerAngles.y=frame.ground ? 0 : Float(-SolarPosition.earthRate*date.timeIntervalSince(pathDate))
+                if let path=root.childNode(withName:"path-\(id)",recursively:false) as? OrbitPathNode {
+                    path.eulerAngles.y=path.ground ? 0 : Float(-SolarPosition.earthRate*date.timeIntervalSince(path.epoch))
                 }
             }
             if let globe=root.childNode(withName:"earth",recursively:false) { EarthLighting.update(globe:globe,camera:camera,date:date) }
