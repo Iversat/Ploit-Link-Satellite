@@ -28,11 +28,7 @@ jobs:
       - name: Package unsigned IPA
         id: package
         run: |
-          mkdir -p build/ipa/Payload
-          cp -R build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/ipa/Payload/
-          cd build/ipa
-          /usr/bin/zip -q -r ../Ploit-Satellite-unsigned.ipa Payload
-          cd ../..
+          python3 tools/package-ipa.py build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/Ploit-Satellite-unsigned.ipa
           python3 tools/verify-ipa.py build/Ploit-Satellite-unsigned.ipa
           shasum -a 256 build/Ploit-Satellite-unsigned.ipa > build/SHA256.txt
       - name: Render native Earth screenshots

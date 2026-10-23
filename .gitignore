@@ -8,3 +8,4 @@ xcuserdata/
 *.ipa
 node_modules/
 tools/private-*
+__pycache__/
