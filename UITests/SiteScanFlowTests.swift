@@ -85,24 +85,54 @@ final class SiteScanFlowTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for:[composited],timeout:2),.completed)
         let rotated = XCTAttachment(screenshot:app.screenshot())
         rotated.name = "sky-dome-rotated"; rotated.lifetime = .keepAlways; add(rotated)
+        let rotatedScreen = XCTAttachment(screenshot:XCUIScreen.main.screenshot())
+        rotatedScreen.name = "sky-dome-rotated-screen"; rotatedScreen.lifetime = .keepAlways; add(rotatedScreen)
 
         let reset = app.buttons["resetSkyDome"]
         XCTAssertTrue(reset.isHittable)
         reset.tap()
         XCTAssertEqual(dome.value as? String,initial,"Reset must restore the original viewing angles.")
+        let resetScreen = XCTAttachment(screenshot:XCUIScreen.main.screenshot())
+        resetScreen.name = "sky-dome-reset-screen"; resetScreen.lifetime = .keepAlways; add(resetScreen)
         close.tap()
         XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
         XCTAssertFalse(close.exists)
     }
-    func testAutoToggleAndDateLabelExist() {
+    func testAutoToggleAndDateLabelExist() throws {
         let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-home"]; app.launch()
         let auto = app.switches["autoSelectSatellite"]
         XCTAssertTrue(auto.waitForExistence(timeout:15))
+        // The preview uses real dated TLEs: wait for the async recommendation, or its settled stale-data result.
+        if !app.staticTexts["recommendedSession"].waitForExistence(timeout:20) {
+            let unavailable = app.staticTexts["recommendationUnavailable"]
+            let settled = expectation(for:NSPredicate(format:"exists == true AND label == %@","Нет подходящих окон по актуальным данным"),evaluatedWith:unavailable)
+            XCTAssertEqual(XCTWaiter.wait(for:[settled],timeout:5),.completed)
+        }
         if !auto.isHittable { app.swipeUp() }
-        let before = auto.value as? String
+
+        func waitForStableToggle() {
+            var previous: CGRect?
+            var unchangedSince = Date()
+            let stable = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+                guard auto.exists, auto.isHittable else { previous=nil; return false }
+                let frame = auto.frame
+                guard frame.width > 0, frame.height > 0 else { return false }
+                if previous != frame { previous=frame; unchangedSince=Date(); return false }
+                return Date().timeIntervalSince(unchangedSince) >= 1
+            },object:nil)
+            XCTAssertEqual(XCTWaiter.wait(for:[stable],timeout:10),.completed,"Toggle geometry must settle before a single tap.")
+        }
+        waitForStableToggle()
+        let before = try XCTUnwrap(auto.value as? String)
+        XCTAssertTrue(["0","1"].contains(before))
+        let toggled = before == "1" ? "0":"1"
         auto.tap()
-        XCTAssertNotEqual(auto.value as? String,before)
+        let changed = expectation(for:NSPredicate(format:"value == %@",toggled),evaluatedWith:auto)
+        XCTAssertEqual(XCTWaiter.wait(for:[changed],timeout:5),.completed,"One tap must change the switch value.")
+        waitForStableToggle()
         auto.tap()
+        let restored = expectation(for:NSPredicate(format:"value == %@",before),evaluatedWith:auto)
+        XCTAssertEqual(XCTWaiter.wait(for:[restored],timeout:5),.completed,"The second tap must restore the switch value.")
         app.swipeDown()
         app.buttons["openSettings"].tap()
         XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout:5))
