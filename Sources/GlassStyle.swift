@@ -54,9 +54,16 @@ struct GlassPanel<Content: View>: View {
     var interactive = false
     @ViewBuilder var content: Content
     var body: some View {
-        content.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-            .satelliteGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous),
-                            clear: true, interactive: interactive)
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        let panelContent = content.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        if interactive {
+            panelContent.satelliteGlass(in: shape, clear: true, interactive: true)
+        } else {
+            // Decorative glass must not intercept touches intended for controls inside the panel.
+            panelContent.background {
+                Color.clear.satelliteGlass(in: shape, clear: true).allowsHitTesting(false)
+            }
+        }
     }
 }
 

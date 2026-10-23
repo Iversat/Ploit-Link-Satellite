@@ -54,13 +54,13 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
-      - name: Unit tests and site screen UI tests
+      - name: Unit tests and application UI tests
         run: |
           set -euo pipefail
           xcrun simctl io "$SITE_DEVICE" recordVideo --codec=h264 build/screenshots/site-interactions.mp4 &
           RECORDING_PID=$!
           trap 'kill -INT "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" || true' EXIT
-          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests/SiteScanFlowTests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
       - name: Capture site and home screens
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
