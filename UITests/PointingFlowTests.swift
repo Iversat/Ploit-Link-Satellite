@@ -166,7 +166,7 @@ final class PointingFlowTests: XCTestCase {
             XCTAssertFalse(app.buttons["toggleGroundTrack"].exists)
             if mode == 1 {
                 app.buttons["orbitSpeed"].tap()
-                app.buttons["×300"].firstMatch.tap()
+                XCTAssertEqual(app.buttons["orbitSpeed"].label,"×300")
                 app.buttons["playOrbit"].tap()
                 XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
                 let date=app.staticTexts["orbitDate"],before=date.label

@@ -293,9 +293,12 @@ struct OrbitExplorerView: View {
             HStack(spacing:12) {
                 Button { playback.togglePlayback() } label: { Image(systemName:playback.playing ? "pause.fill":"play.fill").frame(width:38,height:34) }
                     .accessibilityLabel(playback.playing ? "Пауза":"Воспроизвести").accessibilityIdentifier("playOrbit")
-                Menu {
-                    ForEach([1.0,60,300],id:\.self) { speed in Button("×\(Int(speed))") { playback.speed=speed } }
-                } label: { Text("×\(Int(playback.speed))").font(.system(size:13,weight:.medium)).monospacedDigit() }.accessibilityIdentifier("orbitSpeed")
+                Button {
+                    playback.speed=playback.speed == 1 ? 60 : playback.speed == 60 ? 300 : 1
+                } label: {
+                    Text("×\(Int(playback.speed))").font(.system(size:13,weight:.medium))
+                        .monospacedDigit().frame(minWidth:44,minHeight:44).contentShape(Rectangle())
+                }.accessibilityIdentifier("orbitSpeed").accessibilityHint("Переключить скорость: 1, 60 или 300")
                 Spacer()
                 Button { playback.now() } label: { Text("Сейчас").font(.system(size:13,weight:.semibold)).padding(.horizontal,14).frame(height:34).background(.white.opacity(0.12),in:Capsule()) }.accessibilityIdentifier("orbitNow")
             }.buttonStyle(.plain)
