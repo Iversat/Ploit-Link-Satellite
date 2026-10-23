@@ -1,0 +1,127 @@
+name: Site screens QA and unsigned IPA
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: site-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Tools
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          command -v xcodegen || brew install xcodegen
+          xcodegen generate
+          mkdir -p build/screenshots
+          xcrun simctl list devices available -j > build/available-simulators.json
+      - name: Build iPhone application
+        run: |
+          set -euo pipefail
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build | tee build-device.log
+      - name: Package and verify unsigned IPA
+        id: package
+        run: |
+          set -euo pipefail
+          python3 tools/package-ipa.py build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/Ploit-Satellite-unsigned.ipa
+          python3 tools/verify-ipa.py build/Ploit-Satellite-unsigned.ipa
+          shasum -a 256 build/Ploit-Satellite-unsigned.ipa > build/SHA256.txt
+      - name: Prepare iOS 26 Pro Max simulator
+        run: |
+          set -euo pipefail
+          DEVICE=$(python3 -c 'import json;d=json.load(open("build/available-simulators.json"));v=[x for k,a in sorted(d["devices"].items(),reverse=True) if "iOS-26-" in k for x in a if x["name"].endswith("Pro Max")];assert v,"No available iOS 26 Pro Max simulator";print(next((x["udid"] for x in v if x["name"]=="iPhone 16 Pro Max"),v[0]["udid"]))')
+          echo "SITE_DEVICE=$DEVICE" >> "$GITHUB_ENV"
+          echo "$DEVICE" >> build/site-devices.txt
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+      - name: Build simulator application and tests
+        id: simulator-build
+        run: |
+          set -euo pipefail
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
+      - name: Unit tests and site screen UI tests
+        run: |
+          set -euo pipefail
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests/SiteScanFlowTests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
+      - name: Capture site and home screens on three configurations
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          for KIND in ios26-pro-max ios18-pro-max ios26-se; do
+            if [ "$KIND" = ios26-pro-max ]; then
+              DEVICE="$SITE_DEVICE"
+              SCENES="home-day home-evening site-scan"
+            else
+              DEVICE=$(python3 -c 'import json,sys;d=json.load(open("build/available-simulators.json"));kind=sys.argv[1];runtime="iOS-18-" if kind=="ios18-pro-max" else "iOS-26-";name="iPhone 16 Pro Max" if kind=="ios18-pro-max" else "iPhone SE (3rd generation)";v=[x for k,a in sorted(d["devices"].items(),reverse=True) if runtime in k for x in a if x["name"]==name];assert v,"Required simulator unavailable: "+kind;print(v[0]["udid"])' "$KIND")
+              echo "$DEVICE" >> build/site-devices.txt
+              SCENES="home site-scan"
+            fi
+            xcrun simctl boot "$DEVICE" || true
+            xcrun simctl bootstatus "$DEVICE" -b
+            xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/PloitSatellite.app
+            xcrun simctl privacy "$DEVICE" grant location ru.ploit.satellite
+            xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            DATA=$(xcrun simctl get_app_container "$DEVICE" ru.ploit.satellite data)
+            for SCENE in $SCENES; do
+              xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+              rm -f "$DATA/Library/Caches/earth-textures-ready"
+              xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
+              case "$SCENE" in home*)
+                for ATTEMPT in {1..60}; do
+                  [ -f "$DATA/Library/Caches/earth-textures-ready" ] && break
+                  sleep 1
+                done
+                test -f "$DATA/Library/Caches/earth-textures-ready"
+                ;;
+              esac
+              sleep 3
+              xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-$SCENE.png"
+            done
+            xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
+            xcrun simctl shutdown "$DEVICE"
+          done
+      - name: Export test attachments including weather controls
+        if: always()
+        run: |
+          if [ -d build/SiteTests.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/SiteTests.xcresult --output-path build/test-attachments
+          fi
+      - name: Upload IPA
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Ploit-Satellite-unsigned-IPA
+          path: |
+            build/Ploit-Satellite-unsigned.ipa
+            build/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload site QA
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Site-QA
+          path: |
+            build/screenshots
+            build/SiteTests.xcresult
+            build/test-attachments
+            build/available-simulators.json
+            build-device.log
+            build-simulator.log
+            build-site-tests.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop simulators
+        if: always()
+        run: |
+          if [ -f build/site-devices.txt ]; then
+            while IFS= read -r DEVICE; do
+              xcrun simctl shutdown "$DEVICE" || true
+            done < build/site-devices.txt
+          fi

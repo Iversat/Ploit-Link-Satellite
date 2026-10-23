@@ -225,6 +225,7 @@ struct SiteWeatherView: View {
     @State private var sky: SiteSkyCondition = .unknown
     @State private var wind: SiteWindCondition = .unknown
     @State private var temperature = ""
+    @State private var expanded = false
 
     private var temperatureIsValid: Bool {
         temperature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || SiteWeather.parseTemperature(temperature) != nil
@@ -234,7 +235,21 @@ struct SiteWeatherView: View {
     }
 
     var body: some View {
-        DisclosureGroup {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { expanded.toggle() } label: {
+                HStack {
+                    Label("Местные условия", systemImage: "cloud.sun").font(.headline)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("siteWeatherDisclosure")
+            .accessibilityValue(expanded ? "Развёрнуто" : "Свёрнуто")
+            if expanded {
         VStack(alignment: .leading, spacing: 12) {
             onlineWeather
             Divider()
@@ -283,10 +298,8 @@ struct SiteWeatherView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.top, 10)
-        } label: {
-            Label("Местные условия", systemImage: "cloud.sun").font(.headline)
+            }
         }
-        .accessibilityIdentifier("siteWeatherDisclosure")
         .onChange(of: locationKey) { _, _ in service.clear() }
         .onDisappear { service.cancel() }
     }
