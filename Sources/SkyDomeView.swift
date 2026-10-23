@@ -140,7 +140,10 @@ struct SkyDomeView: View {
         context.fill(Path(ellipseIn:base),with:.color(Color(red:0.015,green:0.02,blue:0.025)))
         context.stroke(Path(ellipseIn:base),with:.color(.white.opacity(0.1)),lineWidth:1)
 
-        let light = SkyDomeVector(x:-0.45,y:-0.35,z:0.82).normalized
+        let lightCenter = CGPoint(x:center.x-CGFloat(radius*0.35),y:center.y-CGFloat(radius*0.65))
+        let shadings: [GraphicsContext.Shading] = [SkyCellState.unknown,.observed,.clear,.blocked].map {
+            surfaceShading($0,center:lightCenter,radius:CGFloat(radius*1.9))
+        }
         let patches = SkyDomePatch.mesh.compactMap { patch -> (SkyDomePatch,[SkyDomeVector],Double)? in
             let vertices = projection.visiblePolygon(patch.vertices)
             guard vertices.count >= 3 else { return nil }
@@ -150,10 +153,9 @@ struct SkyDomeView: View {
             var shape = Path(); shape.move(to:screen(vertices[0]))
             for vertex in vertices.dropFirst() { shape.addLine(to:screen(vertex)) }
             shape.closeSubpath()
-            let color = surfaceColor(survey.cells[patch.cell],normal:patch.normal,light:light)
             // Shared polygon edges stay solid; independent edge antialiasing
             // exposes the background as thin seams between adjacent patches.
-            context.fill(shape,with:.color(color),style:FillStyle(antialiased:false))
+            context.fill(shape,with:shadings[survey.cells[patch.cell].rawValue],style:FillStyle(antialiased:false))
         }
 
         var track = Path()
@@ -192,7 +194,7 @@ struct SkyDomeView: View {
         }
     }
 
-    private func surfaceColor(_ state: SkyCellState, normal: SkyDomeVector, light: SkyDomeVector) -> Color {
+    private func surfaceShading(_ state: SkyCellState, center: CGPoint, radius: CGFloat) -> GraphicsContext.Shading {
         let base: (Double,Double,Double)
         switch state {
         case .clear: base = (0.16,0.66,0.94)
@@ -200,7 +202,15 @@ struct SkyDomeView: View {
         case .observed: base = (0.25,0.29,0.34)
         case .unknown: base = (0.15,0.18,0.22)
         }
-        let shade = 0.48+0.52*max(0,normal.dot(light))
-        return Color(red:base.0*shade,green:base.1*shade,blue:base.2*shade)
+        func tone(_ brightness: Double) -> Color {
+            Color(red:base.0*brightness,green:base.1*brightness,blue:base.2*brightness)
+        }
+        // Every patch of a state samples the same continuous screen-space
+        // gradient, so tessellation does not produce visible lighting bands.
+        return .radialGradient(Gradient(stops:[
+            .init(color:tone(1.05),location:0),
+            .init(color:tone(0.85),location:0.48),
+            .init(color:tone(0.4),location:1)
+        ]),center:center,startRadius:0,endRadius:radius)
     }
 }

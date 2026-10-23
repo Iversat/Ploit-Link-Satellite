@@ -79,6 +79,10 @@ final class SiteScanFlowTests: XCTestCase {
         dome.coordinate(withNormalizedOffset:CGVector(dx:0.50,dy:0.70))
             .press(forDuration:0.05,thenDragTo:dome.coordinate(withNormalizedOffset:CGVector(dx:0.50,dy:0.30)))
         XCTAssertNotEqual(dome.value as? String,horizontal,"Vertical drag must tilt the dome.")
+        // Let the compositor finish the surrounding glass and text before capturing the rotated frame.
+        let composited = expectation(description:"Rotated dome frame composited")
+        DispatchQueue.main.asyncAfter(deadline:.now() + 0.5) { composited.fulfill() }
+        XCTAssertEqual(XCTWaiter.wait(for:[composited],timeout:2),.completed)
         let rotated = XCTAttachment(screenshot:app.screenshot())
         rotated.name = "sky-dome-rotated"; rotated.lifetime = .keepAlways; add(rotated)
 
