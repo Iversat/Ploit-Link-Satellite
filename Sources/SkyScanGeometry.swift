@@ -16,7 +16,8 @@ struct SkyScanTarget: Identifiable, Equatable {
 enum SkyScanCollectionArea {
     static let central = CGRect(x:0.18,y:0.18,width:0.64,height:0.64)
     static func contains(_ point: CGPoint, visible: CGRect) -> Bool {
-        guard [visible.origin.x,visible.origin.y,visible.size.width,visible.size.height,point.x,point.y].allSatisfy(\.isFinite),
+        guard !visible.isInfinite, !visible.isNull,
+              [visible.origin.x,visible.origin.y,visible.size.width,visible.size.height,point.x,point.y].allSatisfy(\.isFinite),
               visible.size.width > 0, visible.size.height > 0 else { return false }
         let area = central.intersection(visible)
         guard !area.isNull, area.width >= 0.05, area.height >= 0.05 else { return false }

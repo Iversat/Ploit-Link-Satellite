@@ -2,6 +2,10 @@ name: Site screens QA and unsigned IPA
 on:
   workflow_dispatch:
     inputs:
+      capture_screenshots:
+        description: Capture visual gallery after tests (disable for focused regression checks)
+        type: boolean
+        default: true
       extended_devices:
         description: Capture additional iOS 18 and compact iPhone screens
         type: boolean
@@ -9,7 +13,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: site-qa-${{ github.ref }}
+  group: site-qa-${{ github.ref }}-${{ inputs.capture_screenshots != false }}
   cancel-in-progress: true
 jobs:
   build:
@@ -58,7 +62,7 @@ jobs:
           trap 'kill -INT "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" || true' EXIT
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests/SiteScanFlowTests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
       - name: Capture site and home screens
-        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
           EXTENDED_DEVICES: ${{ inputs.extended_devices }}
         run: |
