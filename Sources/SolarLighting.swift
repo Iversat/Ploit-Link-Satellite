@@ -19,6 +19,13 @@ enum SolarPosition {
 }
 
 enum EarthLighting {
+    static func configure(camera: SCNCamera) {
+        // Preserve the actual day/night contrast instead of exposing a dark
+        // hemisphere as if it were a dimly lit photograph.
+        camera.wantsHDR=false
+        camera.wantsExposureAdaptation=false
+        camera.bloomIntensity=0
+    }
     static func configure(_ material: SCNMaterial) {
         material.lightingModel = .constant
         material.diffuse.intensity=1; material.emission.intensity=1
@@ -29,7 +36,7 @@ enum EarthLighting {
         #pragma body
         float solar = dot(normalize(_surface.normal), normalize(sunDirection));
         float daylight = smoothstep(-0.10, 0.10, solar);
-        float diffuseLight = 0.012 + daylight * (0.24 + 0.76 * sqrt(max(0.0, solar)));
+        float diffuseLight = 0.002 + daylight * (0.24 + 0.76 * sqrt(max(0.0, solar)));
         _surface.diffuse.rgb *= diffuseLight;
         float3 nightMap = max(_surface.emission.rgb, float3(0.0));
         float lightEnergy = max(0.0, min(nightMap.r, nightMap.g) - 0.90 * nightMap.b);
@@ -37,7 +44,7 @@ enum EarthLighting {
         float3 cityLights = float3(nightMap.r, nightMap.g, min(nightMap.b, min(nightMap.r, nightMap.g)));
         _surface.emission.rgb = cityLights * cityMask * float3(1.0, 0.96, 0.86) * (1.0-daylight) * 1.15;
         float rim = pow(1.0-abs(dot(normalize(_surface.normal), normalize(_surface.view))), 5.0);
-        _surface.emission.rgb += float3(0.035,0.19,0.40) * rim * (0.12+0.88*daylight);
+        _surface.emission.rgb += float3(0.035,0.19,0.40) * rim * (0.02+0.98*daylight);
         """]
         material.setValue(NSValue(scnVector3:SCNVector3(0,0,1)),forKey:"sunDirection")
     }

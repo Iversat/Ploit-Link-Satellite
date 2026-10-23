@@ -14,8 +14,16 @@ enum HomePanel: String, Identifiable {
     @Published var clock = Date()
     @Published var fleetElements: [Int:Elements] = [:]
     @Published var sessionWindows: [Int:[PassWindow]] = [:]
+    @Published private(set) var sessionContexts: [Int:SessionPredictionContext] = [:]
+    @Published var autoSelectSatellite = UserDefaults.standard.bool(forKey:"autoSelectSatellite") {
+        didSet {
+            UserDefaults.standard.set(autoSelectSatellite,forKey:"autoSelectSatellite")
+            if !autoSelectSatellite { automaticSelectionTask?.cancel(); automaticSelectionTask=nil }
+        }
+    }
     @Published var calculatingSessions = false
     @Published var orbitPresented = false
+    @Published var scannerPresented = false
     @Published var homePanel: HomePanel?
     private(set) var orbitInitialDate: Date?
     private(set) var orbitInitialSatelliteID: Int?
@@ -56,6 +64,31 @@ enum HomePanel: String, Identifiable {
     private var sessionsMask: Double = -1
     private var sessionsUpdated = Date.distantPast
     private var screenshotMode = false
+    private var automaticSelectionTask: Task<Void,Never>?
+    var recommendedSession: SessionRecommendation? {
+        SessionRecommendation.best(satellites:satellites,windows:sessionWindows,contexts:sessionContexts,
+                                   elements:fleetElements,observer:observer,minimumElevation:minElevation,
+                                   date:clock,preferredID:selectedID)
+    }
+    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !orbitPending && homePanel == nil && !calculatingSessions }
+    func applyAutomaticSelectionIfNeeded() {
+        guard automaticSelectionAllowed, automaticSelectionTask == nil, let candidate=recommendedSession else { return }
+        if candidate.satellite.id == selectedID {
+            if modeID != candidate.mode.id { modeID=candidate.mode.id }
+            return
+        }
+        automaticSelectionTask=Task { [weak self] in
+            guard let self else { return }
+            defer { automaticSelectionTask=nil }
+            guard !Task.isCancelled, automaticSelectionAllowed,
+                  let current=recommendedSession, current.satellite.id != selectedID else { return }
+            await select(id:current.satellite.id,preferredModeID:current.mode.id)
+        }
+    }
+    func selectManually(id: Int) async {
+        autoSelectSatellite=false
+        await select(id:id)
+    }
     var satellite: Satellite? { satellites.first { $0.id == selectedID } ?? satellites.first }
     var mode: RadioMode? { satellite?.modes.first { $0.id == modeID } ?? satellite?.primaryMode }
     var observer: Observer? {
@@ -105,6 +138,7 @@ enum HomePanel: String, Identifiable {
             screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
             if preview.contains("orbits") { orbitPresented = true }
+            else if preview.contains("scan") { scannerPresented = true }
             else if preview == "--ui-screenshot-settings" { homePanel = .settings }
             else if preview.contains("catalogue") { homePanel = .satellites }
             else if !preview.contains("home") {
@@ -151,12 +185,13 @@ enum HomePanel: String, Identifiable {
             }
         }
     }
-    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
-    func select(id: Int) async {
+    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; automaticSelectionTask?.cancel(); automaticSelectionTask=nil; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
+    func select(id: Int, preferredModeID: String? = nil) async {
         let token = UUID(); selectionToken = token
         refreshToken = UUID(); updating = false
         clearSkyConfirmed=false
         selectedID = id; modeID = satellite?.primaryMode.id ?? "aprs"
+        if let preferredModeID, satellite?.modes.contains(where:{$0.id == preferredModeID}) == true { modeID=preferredModeID }
         UserDefaults.standard.set(id, forKey: "selectedSatellite")
         look = nil; futureLook = nil; elements = nil; passes = []; error = nil
         passTask?.cancel(); predicting = false; passObserver = nil; lastPrediction = .distantPast
@@ -189,9 +224,10 @@ enum HomePanel: String, Identifiable {
         clock = date
         sensors.axis = axis
         if let observer {
-            let moved=sessionsObserver.map { abs($0.latitude-observer.latitude)+abs($0.longitude-observer.longitude)>0.03 } ?? true
+            let moved=sessionsObserver.map { !SessionPredictionContext.sameLocation($0,observer) } ?? true
             if !calculatingSessions && (moved || sessionsMask != minElevation || clock.timeIntervalSince(sessionsUpdated)>300) { refreshSessions() }
         }
+        applyAutomaticSelectionIfNeeded()
         guard let elements, let observer, elements.ageDays(at:date)<=14 else { look = nil; futureLook=nil; return }
         let token = selectionToken
         do {
@@ -213,20 +249,28 @@ enum HomePanel: String, Identifiable {
             do {
                 let values = try await fleetEngine.passes(elements: elements, observer: observer, date: Date(), minElevation: mask)
                 guard !Task.isCancelled, token == selectionToken else { return }
+                guard self.observer.map({SessionPredictionContext.sameLocation($0,observer)}) == true,
+                      minElevation == mask, fleetElements[elements.norad] == elements else { return }
                 passes = values; sessionWindows[elements.norad] = values; passObserver = observer; lastPrediction = Date()
+                sessionContexts[elements.norad]=SessionPredictionContext(observer:observer,minimumElevation:mask,elements:elements)
             } catch { if !Task.isCancelled, token == selectionToken { self.error = error.localizedDescription } }
         }
     }
     func refreshSessions(force: Bool = false) {
-        guard let observer, !calculatingSessions || force else { return }
+        guard let observer else {
+            fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false
+            sessionWindows=[:]; sessionContexts=[:]; sessionsObserver=nil
+            return
+        }
+        guard !calculatingSessions || force else { return }
         fleetTask?.cancel()
         let token=UUID(),date=Date(),mask=minElevation
         fleetToken=token; calculatingSessions=true
-        if sessionsObserver.map({abs($0.latitude-observer.latitude)+abs($0.longitude-observer.longitude)>0.03}) ?? true || sessionsMask != mask { sessionWindows=[:] }
+        if sessionsObserver.map({!SessionPredictionContext.sameLocation($0,observer)}) ?? true || sessionsMask != mask { sessionWindows=[:]; sessionContexts=[:] }
         sessionsObserver=observer; sessionsMask=mask
         let ids=satellites.map(\.id)
         fleetTask=Task {
-            defer { if fleetToken==token { calculatingSessions=false; sessionsUpdated=Date() } }
+            defer { if fleetToken==token { calculatingSessions=false; sessionsUpdated=Date(); applyAutomaticSelectionIfNeeded() } }
             // Load the complete offline catalogue before any network request.
             for id in ids {
                 guard !Task.isCancelled, fleetToken==token else { return }
@@ -236,7 +280,9 @@ enum HomePanel: String, Identifiable {
                 guard !Task.isCancelled, fleetToken==token else { return }
                 if let value=fleetElements[id], value.ageDays(at:date)<=14,
                    let windows=try? await fleetEngine.passes(elements:value,observer:observer,date:date,minElevation:mask) {
-                    guard fleetToken==token else { return }; sessionWindows[id]=windows
+                    guard !Task.isCancelled, fleetToken==token else { return }
+                    sessionWindows[id]=windows
+                    sessionContexts[id]=SessionPredictionContext(observer:observer,minimumElevation:mask,elements:value)
                 }
             }
             guard !screenshotMode else { return }
@@ -248,7 +294,9 @@ enum HomePanel: String, Identifiable {
                         fleetElements[id]=value
                         if selectedID==id { elements=value; lastPrediction = .distantPast }
                         if let windows=try? await fleetEngine.passes(elements:value,observer:observer,date:date,minElevation:mask) {
-                            guard fleetToken==token else { return }; sessionWindows[id]=windows
+                            guard !Task.isCancelled, fleetToken==token else { return }
+                            sessionWindows[id]=windows
+                            sessionContexts[id]=SessionPredictionContext(observer:observer,minimumElevation:mask,elements:value)
                         }
                     }
                 }
@@ -260,6 +308,7 @@ enum HomePanel: String, Identifiable {
         UserDefaults.standard.set(manualLat, forKey: "manualLat")
         UserDefaults.standard.set(manualLon, forKey: "manualLon")
         lastPrediction = .distantPast; passObserver = nil; look = nil; futureLook = nil; passes = []
+        sessionWindows=[:]; sessionContexts=[:]
         refreshSessions(force:true)
         Task { await tick() }
     }

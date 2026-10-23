@@ -10,7 +10,7 @@ struct SatellitePicker: View {
                 Section {
                     ForEach(model.satellites.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.subtitle.localizedCaseInsensitiveContains(query) }) { satellite in
                         Button {
-                            Task { await model.select(id:satellite.id) }; dismiss()
+                            Task { await model.selectManually(id:satellite.id) }; dismiss()
                         } label: {
                             VStack(alignment:.leading,spacing:10) {
                             SatelliteSessionLabel(id:satellite.id)
@@ -119,24 +119,24 @@ struct SettingsView: View {
                     Text("Выбирайте ось, соответствующую максимуму диаграммы вашей антенны. Для штыря наведение вдоль штыря может попадать в провал диаграммы.").font(.caption).foregroundStyle(.secondary)
                     Slider(value:$model.minElevation,in:10...60,step:5) { Text("Маска горизонта") }
                     LabeledContent("Минимальный угол места",value:"\(Int(model.minElevation))°")
-                    Text("Зелёный индикатор доступен только выше этого угла. Дома, деревья и стены автоматически не распознаются; для наведения нужен открытый обзор неба.").font(.caption).foregroundStyle(.secondary)
+                    Text("Зелёный индикатор доступен только выше этого угла. Для наведения нужен открытый обзор неба. Карту препятствий можно составить отдельно в разделе «Проверить место».").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Орбитальные данные") {
                     if let elements=model.elements {
                         LabeledContent("Возраст TLE",value:String(format:"%.1f суток",elements.ageDays()))
-                        if let epoch=elements.epoch { LabeledContent("Эпоха",value:epoch.formatted(date:.numeric,time:.shortened)) }
+                        if let epoch=elements.epoch { LabeledContent("Дата",value:epoch.formatted(date:.numeric,time:.shortened)) }
                         if model.stale { Text("После 3 суток точность снижается. После 14 суток наведение отключается.").font(.caption).foregroundStyle(.orange) }
                     }
-                    Button { Task { await model.refresh() } } label: { HStack { Text("Обновить TLE · CelesTrak");Spacer();if model.updating { ProgressView() } } }.disabled(model.updating)
+                    Button { Task { await model.refresh() } } label: { HStack { Text("Обновить TLE");Spacer();if model.updating { ProgressView() } } }.disabled(model.updating)
                     if let error=model.error { Text(error).font(.caption).foregroundStyle(.orange) }
-                    Text("Интернет нужен для обновления TLE. Затем орбита и наведение вычисляются офлайн. Сетевые запросы содержат только номер спутника.").font(.caption).foregroundStyle(.secondary)
+                    Text("Источники: CelesTrak и SatNOGS DB. Интернет нужен для обновления TLE. Затем орбита и наведение вычисляются офлайн. Запросы орбит содержат только номер спутника.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     Button("Тренировка наведения") { dismiss();model.enterPointing(training:true) }
                     Text("Тренировка использует условную цель 135° / 45°, а не реальный спутник.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("О приложении") {
-                    Text("Ploit Space · 1.3.8").fontWeight(.medium)
+                    Text("Ploit Space · 1.4.0").fontWeight(.medium)
                     Text("Визуальный помощник для внешнего радиоустройства. Не измеряет спутниковый сигнал и не передаёт сообщения встроенным модемом iPhone.").font(.footnote).foregroundStyle(.secondary)
                     Text("Приложение создано независимо от Apple. Иллюстрация Земли: NASA Earth Observatory, Black Marble 2016. Орбиты: satellite.js (MIT), CelesTrak.").font(.caption).foregroundStyle(.secondary)
                     Link("Данные и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Satellite-iOS")!)

@@ -26,10 +26,11 @@ struct AssistantView: View {
             ZStack {
                 (model.pointing && model.pointingStyle == .radar ? Color(red:0.025,green:0.03,blue:0.04) : Color.black).ignoresSafeArea()
                 if !model.pointing || model.pointingStyle == .earth {
-                    EarthView(active: !model.orbitPresented,latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
+                    EarthView(active: !model.orbitPresented && !model.scannerPresented,latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
                     LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
                 }
                 if model.pointing { PointingView() } else {
+                    ScrollView {
                     VStack(spacing: 0) {
                         AssistantHeader { model.homePanel = .settings }
                         Spacer(minLength: 40)
@@ -58,6 +59,11 @@ struct AssistantView: View {
                                 smallButton("Пролёты",icon:"clock.arrow.circlepath") { model.homePanel = .passes }
                                 smallButton("Орбиты",icon:"globe") { model.openOrbits() }
                             }
+                            Button { model.scannerPresented = true } label: {
+                                Label("Проверить место",systemImage:"camera.viewfinder")
+                                    .font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity).frame(height:42)
+                                    .satelliteGlass(in:Capsule(),clear:true,interactive:true)
+                            }.buttonStyle(.plain).accessibilityIdentifier("openSiteScan")
                         }
                         }
                         .padding(.horizontal,22)
@@ -68,7 +74,8 @@ struct AssistantView: View {
                             Text("·").padding(.horizontal,3)
                             Text("PLOIT SPACE").tracking(1.5)
                         }.font(.system(size: 10,weight: .medium)).foregroundStyle(.white.opacity(0.45)).padding(.bottom,18)
-                    }
+                    }.frame(minHeight:geometry.size.height)
+                    }.scrollIndicators(.hidden)
                 }
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.35),value: model.pointing)
@@ -85,6 +92,7 @@ struct AssistantView: View {
                               initialDate:model.orbitInitialDate,
                               initialSatelliteID:model.orbitInitialSatelliteID).environmentObject(model)
         }
+        .fullScreenCover(isPresented:$model.scannerPresented) { SiteScanView().environmentObject(model) }
     }
     private var status: some View {
         GlassPanel {
@@ -95,6 +103,8 @@ struct AssistantView: View {
                     if model.updating { ProgressView().tint(.white) }
                 }
                 SessionSummaryView(model:model)
+                Divider().overlay(.white.opacity(0.12)).padding(.vertical,3)
+                SessionRecommendationView()
             }
         }
     }

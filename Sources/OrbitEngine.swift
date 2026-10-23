@@ -79,27 +79,55 @@ actor OrbitEngine {
 
 actor ElementStore {
     private let folder: URL
-    init() {
-        folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Orbits", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    private let seedURL: URL?
+    init(folder: URL? = nil, seedURL: URL? = nil) {
+        self.folder = folder ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Orbits", isDirectory: true)
+        self.seedURL = seedURL ?? Bundle.main.url(forResource:"seed-tle",withExtension:"json")
+        try? FileManager.default.createDirectory(at:self.folder,withIntermediateDirectories:true)
     }
     func cached(id: Int) -> Elements? {
+        var candidates: [Elements]=[]
         if let data = try? Data(contentsOf: folder.appendingPathComponent("\(id).json")),
-           let value = try? JSONDecoder().decode(Elements.self, from: data), value.valid(for: id) { return value }
-        guard let url = Bundle.main.url(forResource: "seed-tle", withExtension: "json"), let data = try? Data(contentsOf: url),
-              let values = try? JSONDecoder().decode([Elements].self, from: data) else { return nil }
-        return values.first { $0.norad == id && $0.valid(for: id) }
+           let value = try? JSONDecoder().decode(Elements.self, from: data), value.valid(for: id) { candidates.append(value) }
+        if let seedURL,let data=try? Data(contentsOf:seedURL),let values=try? JSONDecoder().decode([Elements].self,from:data) {
+            candidates.append(contentsOf:values.filter{$0.norad==id && $0.valid(for:id)})
+        }
+        return candidates.max { ($0.epoch ?? .distantPast)<($1.epoch ?? .distantPast) }
+    }
+    static func parseSatNOGS(_ data: Data,id: Int,date: Date = Date()) throws -> Elements {
+        struct Entry: Decodable { let norad_cat_id: Int; let tle1: String; let tle2: String }
+        let candidates=try JSONDecoder().decode([Entry].self,from:data).filter{$0.norad_cat_id==id}
+            .compactMap{Elements.parse($0.tle1+"\n"+$0.tle2,id:id,date:date)}
+        guard let result=candidates.filter({$0.ageDays(at:date)<30}).max(by:{($0.epoch ?? .distantPast)<($1.epoch ?? .distantPast)}) else { throw OrbitError.invalidElements }
+        return result
     }
     func update(id: Int) async throws -> Elements {
         // Only NORAD ID is sent; user's position never leaves the device.
-        let url = URL(string: "https://celestrak.org/NORAD/elements/gp.php?CATNR=\(id)&FORMAT=TLE")!
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue("PloitSpace/1.3", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count < 32000,
-              let text = String(data: data, encoding: .utf8) else { throw OrbitError.network }
-        guard let result = Elements.parse(text, id: id), result.ageDays() < 30 else { throw OrbitError.invalidElements }
-        try JSONEncoder().encode(result).write(to: folder.appendingPathComponent("\(id).json"), options: .atomic)
-        return result
+        let sources=["https://celestrak.org/NORAD/elements/gp.php?CATNR=\(id)&FORMAT=TLE",
+                     "https://db.satnogs.org/api/tle/?norad_cat_id=\(id)"]
+        var lastError: Error=OrbitError.network
+        for (index,source) in sources.enumerated() {
+            try Task.checkCancellation()
+            do {
+                var request=URLRequest(url:URL(string:source)!,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:15)
+                request.setValue("PloitSpace/1.3",forHTTPHeaderField:"User-Agent")
+                let (data,response)=try await URLSession.shared.data(for:request)
+                try Task.checkCancellation()
+                guard let http=response as? HTTPURLResponse,http.statusCode==200,data.count<32000 else { throw OrbitError.network }
+                let candidates: [Elements]
+                if index==0 {
+                    candidates=String(data:data,encoding:.utf8).flatMap{Elements.parse($0,id:id)}.map{[$0]} ?? []
+                } else {
+                    candidates=[try Self.parseSatNOGS(data,id:id)]
+                }
+                guard let result=candidates.filter({$0.ageDays()<30}).max(by:{($0.epoch ?? .distantPast)<($1.epoch ?? .distantPast)}) else { throw OrbitError.invalidElements }
+                try JSONEncoder().encode(result).write(to:folder.appendingPathComponent("\(id).json"),options:.atomic)
+                return result
+            } catch {
+                try Task.checkCancellation()
+                lastError=error
+            }
+        }
+        throw lastError
     }
 }

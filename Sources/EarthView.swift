@@ -10,6 +10,12 @@ struct EarthView: UIViewRepresentable {
         if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home-night") {
             return ISO8601DateFormatter().date(from:"2026-10-21T00:00:00Z")!
         }
+        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home-evening") {
+            return ISO8601DateFormatter().date(from:"2026-10-23T16:38:00Z")!
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-home-day") {
+            return ISO8601DateFormatter().date(from:"2026-10-23T09:00:00Z")!
+        }
         #endif
         return Date()
     }
@@ -45,15 +51,15 @@ struct EarthView: UIViewRepresentable {
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 45
         camera.camera?.projectionDirection = .vertical
-        camera.camera?.wantsHDR = true
-        camera.camera?.exposureOffset = -0.6
-        camera.camera?.bloomIntensity = 0
+        EarthLighting.configure(camera:camera.camera!)
         camera.camera?.zNear = 0.1
         camera.position = SCNVector3(0,0,2.3)
         scene.rootNode.addChildNode(camera)
         view.scene = scene
         view.pointOfView = camera
-        EarthLighting.update(globe:globe,camera:camera,date:lightingDate)
+        EarthLighting.update(globe:globe,camera:camera,date:lightingDate,animated:false)
+        context.coordinator.latitude=latitude; context.coordinator.longitude=longitude
+        context.coordinator.lastLightingDate=lightingDate
         view.isPlaying = false
         return view
     }
@@ -62,26 +68,23 @@ struct EarthView: UIViewRepresentable {
     }
     func updateUIView(_ uiView: SCNView, context: Context) {
         guard active else { return }
-        // The mostly static home backdrop needs no second continuous frame loop.
-        // Update its sunlight with the regular model refresh, on the main thread.
+        // Geographic rotation and sunlight must use the same transforms in the
+        // same frame. This static backdrop does not need a second frame loop.
         let date=lightingDate
-        if abs(date.timeIntervalSince(context.coordinator.lastLightingDate))>=1,
-           let globe=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=uiView.pointOfView {
-            SCNTransaction.begin(); SCNTransaction.disableActions=true
-            EarthLighting.update(globe:globe,camera:camera,date:date)
-            SCNTransaction.commit()
-            context.coordinator.lastLightingDate=date
-            uiView.setNeedsDisplay()
-        }
         let previous=context.coordinator
-        if let lat=previous.latitude, let lon=previous.longitude,
-           abs(lat-latitude)<0.01, abs(AimMath.wrap(lon-longitude))<0.01 { return }
-        previous.latitude=latitude; previous.longitude=longitude
-        guard let node = uiView.scene?.rootNode.childNode(withName: "earth", recursively: false) else { return }
-        SCNTransaction.begin()
-        SCNTransaction.animationDuration = 1.2
-        node.eulerAngles = SCNVector3(Float((latitude - 50) * .pi / 180),Float(-longitude * .pi / 180),0)
+        let moved=(previous.latitude.map { abs($0-latitude)>=0.01 } ?? true)
+            || (previous.longitude.map { abs(AimMath.wrap($0-longitude))>=0.01 } ?? true)
+        guard moved || abs(date.timeIntervalSince(previous.lastLightingDate))>=1,
+              let node=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),
+              let camera=uiView.pointOfView else { return }
+        SCNTransaction.begin(); SCNTransaction.disableActions=true
+        if moved {
+            node.eulerAngles=SCNVector3(Float((latitude-50) * .pi/180),Float(-longitude * .pi/180),0)
+            previous.latitude=latitude; previous.longitude=longitude
+        }
+        EarthLighting.update(globe:node,camera:camera,date:date,animated:false)
         SCNTransaction.commit()
+        previous.lastLightingDate=date
         uiView.setNeedsDisplay()
     }
 }

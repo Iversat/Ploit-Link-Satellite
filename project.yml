@@ -23,14 +23,15 @@ targets:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: Ploit Space
-        CFBundleShortVersionString: "1.3.8"
-        CFBundleVersion: "12"
+        CFBundleShortVersionString: "1.4.0"
+        CFBundleVersion: "13"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark
         NSLocationWhenInUseUsageDescription: Ваше положение нужно для расчёта направления на спутник и времени пролёта. Координаты остаются на устройстве.
         NSMotionUsageDescription: Датчики движения нужны, чтобы навести верхний торец телефона или внешнюю антенну на спутник.
+        NSCameraUsageDescription: Камера и LiDAR нужны для карты препятствий на пути спутника. Кадры обрабатываются на устройстве и не отправляются.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.ploit.satellite
