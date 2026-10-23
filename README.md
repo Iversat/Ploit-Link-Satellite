@@ -42,7 +42,7 @@ The app helps you choose a satellite, find an upcoming pass, point your antenna 
   <img src="docs/screenshots/orbits-night.png" width="45%" alt="Ночная сторона Земли с огнями городов">
 </p>
 
-Один ракурс в разное время. Используются статические карты NASA; они не показывают текущую облачность.
+Примеры дневной и ночной сторон. Используются статические карты NASA; они не показывают текущую облачность.
 
 </details>
 

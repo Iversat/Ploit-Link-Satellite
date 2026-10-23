@@ -2,6 +2,24 @@ import XCTest
 @testable import PloitSatellite
 
 final class SkyScanLifecycleTests: XCTestCase {
+    @MainActor func testCollectionWaitsForMeasuredViewportAndResetsAcrossLifecycle() async {
+        let scan = SkyScanController(torch:TestSkyScanTorch())
+        let center = CGPoint(x:0.5,y:0.5)
+        XCTAssertFalse(SkyScanCollectionArea.contains(center,visible:scan.collectionViewport))
+        scan.collectionViewport = SkyScanCollectionArea.central
+        XCTAssertTrue(SkyScanCollectionArea.contains(center,visible:scan.collectionViewport))
+        scan.stop()
+        XCTAssertEqual(scan.collectionViewport,.zero)
+        XCTAssertFalse(SkyScanCollectionArea.contains(center,visible:scan.collectionViewport))
+        scan.collectionViewport = SkyScanCollectionArea.central
+        // Empty-map inspection exits before camera authorization on every device.
+        // Even a rejected start must discard stale bounds from an earlier screen.
+        await scan.start(observer:nil,collecting:false)
+        XCTAssertFalse(scan.running)
+        XCTAssertEqual(scan.collectionViewport,.zero)
+        XCTAssertFalse(SkyScanCollectionArea.contains(center,visible:scan.collectionViewport))
+    }
+
     @MainActor func testEveryStopPathRequestsTorchOffAndPreviewCannotEnableIt() {
         let torch = TestSkyScanTorch()
         let scan = SkyScanController(torch:torch)

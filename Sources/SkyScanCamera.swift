@@ -75,7 +75,7 @@ enum SkyScanLocation {
     var coveredTargetCount: Int { survey.coveredCellCount }
     let totalTargetCount = SkySurvey.columns * SkySurvey.rows
     var headingReady = false
-    var collectionViewport = SkyScanCollectionArea.central
+    var collectionViewport = CGRect.zero
     let session = ARSession()
     let supportsDepth = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
     private var lastSample: TimeInterval = 0
@@ -102,6 +102,7 @@ enum SkyScanLocation {
     }
     func start(observer: Observer?, collecting: Bool = true) async {
         let token = UUID(); startToken = token
+        collectionViewport = .zero
         torchError = nil
         if !collecting {
             guard survey.hasRecordedData else { message = "Сначала соберите карту обзора неба."; return }
@@ -147,6 +148,7 @@ enum SkyScanLocation {
     }
     func stop() {
         startToken = UUID(); running = false; direction = nil; collecting = false
+        collectionViewport = .zero
         requestTorch(false); session.pause()
         projectedTargets = []; dwell.reset(); feedback.reset(); collectionAnimation.reset(); collectionHaptic = nil
     }
