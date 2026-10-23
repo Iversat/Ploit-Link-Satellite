@@ -16,8 +16,8 @@ jobs:
           set -euo pipefail
           mkdir -p build/ipa-check
           cd build/ipa-check
-          curl --fail --location --retry 3 -o original.ipa https://github.com/Iversat/Ploit-Satellite-iOS/releases/download/v1.3.8/Ploit-Space-1.3.8-unsigned.ipa
-          curl --fail --location --retry 3 -o compat.ipa https://github.com/Iversat/Ploit-Satellite-iOS/releases/download/v1.3.8/Ploit-Space-1.3.8-compat-unsigned.ipa
+          curl --fail --location --retry 3 -o original.ipa https://github.com/Iversat/Ploit-Link-Satellite/releases/download/v1.3.8/Ploit-Space-1.3.8-unsigned.ipa
+          curl --fail --location --retry 3 -o compat.ipa https://github.com/Iversat/Ploit-Link-Satellite/releases/download/v1.3.8/Ploit-Space-1.3.8-compat-unsigned.ipa
           unzip -q original.ipa -d original
           unzip -q compat.ipa -d compat
           plutil -lint original/Payload/PloitSatellite.app/Info.plist
