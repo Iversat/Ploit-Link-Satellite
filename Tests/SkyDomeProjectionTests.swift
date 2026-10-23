@@ -55,6 +55,21 @@ final class SkyDomeProjectionTests: XCTestCase {
         XCTAssertTrue(projection.isVisible(segment.1))
     }
 
+    func testPointCloudUsesEverySurveyCellWithoutChangingCoverage() {
+        let mesh = SkyDomePoint.mesh
+        XCTAssertEqual(mesh.count,3_072)
+        XCTAssertEqual(Set(mesh.map(\.cell)).count,SkySurvey.columns*SkySurvey.rows)
+        for point in mesh {
+            XCTAssertEqual(point.vector.dot(point.vector),1,accuracy:1e-12)
+            XCTAssertTrue((0...1).contains(point.vector.z))
+            let azimuth = atan2(point.vector.x,point.vector.y)*180 / .pi
+            let elevation = asin(point.vector.z)*180 / .pi
+            XCTAssertEqual(SkySurvey.index(azimuth:azimuth,elevation:elevation),point.cell)
+        }
+        let empty = SkySurvey()
+        XCTAssertTrue(mesh.allSatisfy { empty.cells[$0.cell] == .unknown })
+    }
+
     func testTrackRejectsHiddenSegmentsAndClipsHorizon() throws {
         let projection = SkyDomeProjection()
         XCTAssertNil(projection.visibleSegment(from:vector(0,0),to:vector(0,20)))

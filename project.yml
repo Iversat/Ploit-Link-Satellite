@@ -22,9 +22,9 @@ targets:
     info:
       path: Config/Info.plist
       properties:
-        CFBundleDisplayName: Ploit Space
-        CFBundleShortVersionString: "1.4.1"
-        CFBundleVersion: "14"
+        CFBundleDisplayName: PLS
+        CFBundleShortVersionString: "1.5.0"
+        CFBundleVersion: "15"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

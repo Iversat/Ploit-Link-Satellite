@@ -223,7 +223,7 @@ struct OrbitExplorerView: View {
         HStack {
             VStack(alignment:.leading,spacing:3) {
                 Text("Орбиты").font(.system(size:27,weight:.bold))
-                Text("Ploit Space").font(.system(size:12,weight:.medium)).foregroundStyle(.white.opacity(0.55))
+                Text("Ploit Link Satellite").font(.system(size:12,weight:.medium)).foregroundStyle(.white.opacity(0.55))
             }
             Spacer()
             Button { playback.focus+=1 } label: {

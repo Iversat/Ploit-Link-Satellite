@@ -11,7 +11,30 @@ struct SkySurvey {
     static let columns = 24
     static let rows = 9
     private(set) var cells = Array(repeating: SkyCellState.unknown, count: SkySurvey.columns * SkySurvey.rows)
+    // Coverage records camera dwell, independently of an open/blocked classification.
+    private(set) var collectedCells: Set<Int> = []
     private var hits = Array(repeating: 0, count: SkySurvey.columns * SkySurvey.rows)
+
+    var coveredCellCount: Int { collectedCells.count }
+    var hasRecordedData: Bool { !collectedCells.isEmpty || cells.contains(where: { $0 != .unknown }) }
+    var coverageFraction: Double {
+        if collectedCells.count == cells.count { return 1 }
+        // Equal angular bins have different areas near the zenith.
+        // The complete hemisphere has solid angle 2π; each row contributes
+        // sin(upper elevation) - sin(lower elevation), divided across columns.
+        return min(1,max(0,collectedCells.reduce(0) { sum,index in
+            let row = index / Self.columns
+            let lower = Double(row) * 10 * .pi / 180
+            let upper = Double(row + 1) * 10 * .pi / 180
+            return sum + (sin(upper) - sin(lower)) / Double(Self.columns)
+        }))
+    }
+    mutating func collect(_ indices: Set<Int>) {
+        for index in indices where cells.indices.contains(index) {
+            collectedCells.insert(index)
+            if cells[index] == .unknown { cells[index] = .observed }
+        }
+    }
 
     static func index(azimuth: Double, elevation: Double) -> Int? {
         guard azimuth.isFinite, elevation.isFinite, (0...90).contains(elevation) else { return nil }

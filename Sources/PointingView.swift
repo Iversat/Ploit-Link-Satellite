@@ -349,30 +349,73 @@ struct HoldingPhoneIllustration: View {
     var axis: AimAxis
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        GeometryReader { geometry in
+        let scale = min(geometry.size.width/260,geometry.size.height/260)
         ZStack {
-            RadarArc(scale:0.49,halfWidth:78).stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:5,lineCap:.round,dash:[0.1,12])).frame(width:220,height:220).offset(y:12)
-            SatelliteGlyph().frame(width:33,height:33).foregroundStyle(.white).offset(y:-105)
-            Path { p in
-                p.move(to:CGPoint(x:78,y:220));p.addCurve(to:CGPoint(x:80,y:114),control1:CGPoint(x:61,y:193),control2:CGPoint(x:75,y:122))
-                p.addCurve(to:CGPoint(x:93,y:139),control1:CGPoint(x:87,y:100),control2:CGPoint(x:96,y:122))
-                p.move(to:CGPoint(x:148,y:112));p.addCurve(to:CGPoint(x:161,y:140),control1:CGPoint(x:179,y:116),control2:CGPoint(x:183,y:126))
-                p.addCurve(to:CGPoint(x:156,y:161),control1:CGPoint(x:180,y:144),control2:CGPoint(x:178,y:153))
-                p.addCurve(to:CGPoint(x:155,y:181),control1:CGPoint(x:175,y:164),control2:CGPoint(x:175,y:177))
-                p.addCurve(to:CGPoint(x:141,y:209),control1:CGPoint(x:164,y:192),control2:CGPoint(x:154,y:209))
-            }.stroke(.white.opacity(0.8),lineWidth:1.3).frame(width:240,height:240)
-            RoundedRectangle(cornerRadius:13).fill(LinearGradient(colors:[Color(white:0.28),.black],startPoint:.top,endPoint:.bottom)).frame(width:76,height:148)
-                .overlay(RoundedRectangle(cornerRadius:13).stroke(.white.opacity(0.75),lineWidth:1.3))
-                .overlay(alignment:.bottom) { Capsule().fill(.white.opacity(0.6)).frame(width:27,height:2).padding(.bottom,7) }
-                .overlay(alignment:.topLeading) {
-                    if axis == .back { VStack(spacing:4) { HStack(spacing:4) { Circle().frame(width:9,height:9);Circle().frame(width:9,height:9) };Circle().frame(width:9,height:9) }.foregroundStyle(.white.opacity(0.8)).padding(8) }
-                }
-                .rotation3DEffect(.degrees(axis == .back ? -24:0),axis:(x:0,y:1,z:0))
+            phone
+                .rotation3DEffect(.degrees(axis == .back ? 26:0),axis:(x:1,y:0,z:0))
+                .rotation3DEffect(.degrees(axis == .back ? 35:0),axis:(x:0,y:1,z:0))
+                .position(x:axis == .back ? 114:130,y:151)
             if axis == .top {
-                Image(systemName:"arrow.up").font(.system(size:24,weight:.light)).foregroundStyle(pointingGreen).offset(y:-89)
+                SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).position(x:130,y:19)
+                Path { path in
+                    path.move(to:CGPoint(x:130,y:61));path.addLine(to:CGPoint(x:130,y:39))
+                    path.move(to:CGPoint(x:124,y:46));path.addLine(to:CGPoint(x:130,y:39));path.addLine(to:CGPoint(x:136,y:46))
+                }.stroke(pointingGreen,style:StrokeStyle(lineWidth:2.5,lineCap:.round,lineJoin:.round))
             } else {
-                Image(systemName:"arrow.up.right").font(.system(size:43,weight:.light)).foregroundStyle(pointingGreen).offset(x:67,y:-45)
+                SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).position(x:222,y:39)
+                Path { path in
+                    path.move(to:CGPoint(x:114,y:151));path.addLine(to:CGPoint(x:207,y:57))
+                    path.move(to:CGPoint(x:196,y:60));path.addLine(to:CGPoint(x:207,y:57));path.addLine(to:CGPoint(x:205,y:69))
+                }.stroke(pointingGreen,style:StrokeStyle(lineWidth:2.5,lineCap:.round,lineJoin:.round))
+                Circle().fill(pointingGreen).frame(width:7,height:7).position(x:114,y:151)
+                Text("90° к стеклу").font(.system(size:10,weight:.medium)).foregroundStyle(.white.opacity(0.65)).position(x:205,y:110)
             }
+        }
+        .frame(width:260,height:260).scaleEffect(scale)
+        .frame(width:geometry.size.width,height:geometry.size.height)
         }.animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:axis)
+            .accessibilityElement(children:.ignore)
+            .accessibilityLabel(axis == .back ? "Вид заднего стекла iPhone с тремя камерами. Стрелка направлена перпендикулярно задней плоскости к спутнику." : "Экран iPhone перед вами. Верхняя грань направлена к спутнику.")
+    }
+    private var phone: some View {
+        RoundedRectangle(cornerRadius:21).fill(LinearGradient(colors:axis == .back ? [Color(white:0.43),Color(white:0.20)] : [Color(white:0.15),Color(white:0.025)],startPoint:.topLeading,endPoint:.bottomTrailing))
+            .overlay(RoundedRectangle(cornerRadius:21).stroke(.white.opacity(0.7),lineWidth:1.6))
+            .overlay {
+                if axis == .top {
+                    RoundedRectangle(cornerRadius:17).stroke(.black.opacity(0.8),lineWidth:2.5).padding(4)
+                }
+            }
+            .overlay(alignment:.top) {
+                if axis == .top { Capsule().fill(.black).frame(width:30,height:8).padding(.top,9) }
+            }
+            .overlay(alignment:.bottom) {
+                if axis == .top { Capsule().fill(.white.opacity(0.65)).frame(width:33,height:3).padding(.bottom,8) }
+            }
+            .overlay(alignment:.topLeading) {
+                if axis == .back { cameraIsland.padding(7) }
+            }
+            .frame(width:100,height:182)
+    }
+    private var cameraIsland: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius:12).fill(Color(white:0.27))
+                .overlay(RoundedRectangle(cornerRadius:12).stroke(.white.opacity(0.24),lineWidth:0.8))
+            lens.position(x:15,y:15)
+            lens.position(x:15,y:42)
+            lens.position(x:40,y:29)
+            Circle().fill(Color(red:0.94,green:0.91,blue:0.79)).frame(width:7,height:7).position(x:40,y:10)
+            Circle().fill(.black.opacity(0.85)).frame(width:6,height:6)
+                .overlay(Circle().stroke(.white.opacity(0.3),lineWidth:0.6)).position(x:40,y:48)
+            Circle().fill(.black.opacity(0.7)).frame(width:2,height:2).position(x:50,y:14)
+        }.frame(width:55,height:57)
+    }
+    private var lens: some View {
+        Circle().fill(.black)
+            .overlay(Circle().stroke(Color(white:0.55),lineWidth:1.5))
+            .overlay(Circle().fill(Color(red:0.04,green:0.07,blue:0.10)).padding(3))
+            .overlay(alignment:.topLeading) { Circle().fill(.white.opacity(0.25)).frame(width:4,height:3).offset(x:5,y:4) }
+            .frame(width:21,height:21)
     }
 }
 

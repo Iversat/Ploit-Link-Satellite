@@ -67,25 +67,21 @@ struct SkyDomeProjection {
     }
 }
 
-private struct SkyDomePatch {
+// A fixed equal-area point set avoids dense polar bands and does not invent
+// samples: each decorative point reads the state of its actual survey cell.
+struct SkyDomePoint {
+    let vector: SkyDomeVector
     let cell: Int
-    let vertices: [SkyDomeVector]
-    let normal: SkyDomeVector
     static let mesh: [Self] = {
-        var patches: [Self] = []
-        for row in 0..<SkySurvey.rows { for column in 0..<SkySurvey.columns {
-            for vertical in 0..<2 { for horizontal in 0..<2 {
-                let a = Double(column)*15 + Double(horizontal)*7.5
-                let e = Double(row)*10 + Double(vertical)*5
-                func vertex(_ az: Double,_ el: Double) -> SkyDomeVector {
-                    SkyDomeProjection.vector(.init(azimuth:az,elevation:el))!
-                }
-                patches.append(.init(cell:row*SkySurvey.columns+column,
-                    vertices:[vertex(a,e),vertex(a+7.5,e),vertex(a+7.5,e+5),vertex(a,e+5)],
-                    normal:vertex(a+3.75,e+2.5)))
-            } }
-        } }
-        return patches
+        let count = 3_072
+        let goldenAngle = .pi * (3 - sqrt(5.0))
+        return (0..<count).map { index in
+            let z = (Double(index)+0.5)/Double(count)
+            let azimuth = (Double(index)*goldenAngle).truncatingRemainder(dividingBy:2 * .pi)
+            let direction = SkyDirection(azimuth:azimuth*180 / .pi,elevation:asin(z)*180 / .pi)
+            return Self(vector:SkyDomeProjection.vector(direction)!,
+                        cell:SkySurvey.index(azimuth:direction.azimuth,elevation:direction.elevation)!)
+        }
     }()
 }
 
@@ -93,9 +89,19 @@ struct SkyDomeView: View {
     let survey: SkySurvey
     let path: [SkyDirection]
     let direction: SkyDirection?
+    var viewingDirection: SkyDirection? = nil
     @State private var yaw = 0.0
     @State private var pitch = 32.0
     @State private var dragStart: (yaw: Double,pitch: Double)?
+
+    // Optional device viewing direction supplies the starting camera bearing;
+    // dragging adds a local offset, while reset follows that bearing again.
+    private var viewingAngles: (yaw: Double,pitch: Double) {
+        guard let viewingDirection, viewingDirection.azimuth.isFinite,
+              viewingDirection.elevation.isFinite else { return (yaw,pitch) }
+        return (AimMath.wrap(yaw-viewingDirection.azimuth),
+                min(75,max(15,viewingDirection.elevation+pitch-32)))
+    }
 
     var body: some View {
         ZStack(alignment:.topTrailing) {
@@ -112,8 +118,8 @@ struct SkyDomeView: View {
                 }
                 .onEnded { _ in dragStart = nil })
             .accessibilityElement(children:.ignore)
-            .accessibilityLabel("Объёмная карта обзора неба. Голубой — отмеченное небо, красный — препятствия, серый — неизвестно, жёлтый — путь спутника")
-            .accessibilityValue(String(format:"yaw %.2f pitch %.2f",locale:Locale(identifier:"en_US_POSIX"),yaw,pitch))
+            .accessibilityLabel("Объёмная точечная карта неба. Белый — отмеченное открытое небо, красный — препятствия, тёмный — неизвестно, золотой — путь спутника")
+            .accessibilityValue(String(format:"yaw %.2f pitch %.2f",locale:Locale(identifier:"en_US_POSIX"),viewingAngles.yaw,viewingAngles.pitch))
             .accessibilityIdentifier("skyDome")
             Button {
                 dragStart = nil; yaw = 0; pitch = 32
@@ -127,35 +133,74 @@ struct SkyDomeView: View {
     }
 
     private func draw(in context: GraphicsContext, size: CGSize) {
-        let projection = SkyDomeProjection(yaw:yaw,pitch:pitch)
-        let inclination = sin(pitch * .pi / 180)
-        let radius = max(1,min((Double(size.width)-60)/2,(Double(size.height)-58)/(1+inclination)))
-        let center = CGPoint(x:size.width/2,y:CGFloat(27+radius))
-        func screen(_ point: SkyDomeVector) -> CGPoint {
-            let p = projection.projected(point)
+        let angles = viewingAngles
+        let projection = SkyDomeProjection(yaw:angles.yaw,pitch:angles.pitch)
+        let inclination = sin(angles.pitch * .pi / 180)
+        let lift = 0.24
+        let labelRadius = 1.19
+        let topExtent = max(1+lift*cos(angles.pitch * .pi / 180),labelRadius*inclination)
+        let bottomExtent = labelRadius*inclination
+        let radius = max(1,min((Double(size.width)-34)/(2*labelRadius),
+                             (Double(size.height)-34)/(topExtent+bottomExtent)))
+        let center = CGPoint(x:size.width/2,y:CGFloat(17+radius*topExtent))
+        func screen(_ point: SkyDomeVector, elevated: Bool = false) -> CGPoint {
+            let p = projection.projected(.init(x:point.x,y:point.y,z:point.z+(elevated ? lift:0)))
             return CGPoint(x:center.x+CGFloat(p.x*radius),y:center.y-CGFloat(p.y*radius))
         }
-        let base = CGRect(x:center.x-CGFloat(radius),y:center.y-CGFloat(radius*inclination),width:CGFloat(radius*2),height:CGFloat(radius*inclination*2))
-        context.fill(Path(ellipseIn:base.insetBy(dx:-6,dy:-4)),with:.color(.black.opacity(0.4)))
-        context.fill(Path(ellipseIn:base),with:.color(Color(red:0.015,green:0.02,blue:0.025)))
-        context.stroke(Path(ellipseIn:base),with:.color(.white.opacity(0.1)),lineWidth:1)
-
-        let lightCenter = CGPoint(x:center.x-CGFloat(radius*0.35),y:center.y-CGFloat(radius*0.65))
-        let shadings: [GraphicsContext.Shading] = [SkyCellState.unknown,.observed,.clear,.blocked].map {
-            surfaceShading($0,center:lightCenter,radius:CGFloat(radius*1.9))
+        func floorVector(_ azimuth: Double,_ scale: Double) -> SkyDomeVector {
+            let a = azimuth * .pi / 180
+            return .init(x:sin(a)*scale,y:cos(a)*scale,z:0)
         }
-        let patches = SkyDomePatch.mesh.compactMap { patch -> (SkyDomePatch,[SkyDomeVector],Double)? in
-            let vertices = projection.visiblePolygon(patch.vertices)
-            guard vertices.count >= 3 else { return nil }
-            return (patch,vertices,patch.normal.dot(projection.towardCamera))
-        }.sorted { $0.2 < $1.2 }
-        for (patch,vertices,_) in patches {
-            var shape = Path(); shape.move(to:screen(vertices[0]))
-            for vertex in vertices.dropFirst() { shape.addLine(to:screen(vertex)) }
-            shape.closeSubpath()
-            // Shared polygon edges stay solid; independent edge antialiasing
-            // exposes the background as thin seams between adjacent patches.
-            context.fill(shape,with:shadings[survey.cells[patch.cell].rawValue],style:FillStyle(antialiased:false))
+
+        let floor = CGRect(x:center.x-CGFloat(radius*1.12),y:center.y-CGFloat(radius*1.12*inclination),
+                           width:CGFloat(radius*2.24),height:CGFloat(radius*2.24*inclination))
+        context.fill(Path(ellipseIn:floor),with:.radialGradient(Gradient(stops:[
+            .init(color:.white.opacity(0.09),location:0),
+            .init(color:.white.opacity(0.025),location:0.45),
+            .init(color:.clear,location:1)
+        ]),center:center,startRadius:0,endRadius:CGFloat(radius*1.12)))
+        // The compass belongs to the ground plane, below the floating map.
+        for tick in 0..<120 {
+            let azimuth = Double(tick)*3
+            let offset = tick % 30
+            guard offset > 2 && offset < 28 else { continue }
+            let a = floorVector(azimuth,1.04), b = floorVector(azimuth,tick % 5 == 0 ? 1.075:1.06)
+            var line = Path(); line.move(to:screen(a)); line.addLine(to:screen(b))
+            let near = projection.projected(a).depth >= 0
+            context.stroke(line,with:.color(.white.opacity(near ? 0.55:0.3)),
+                           style:StrokeStyle(lineWidth:0.9,lineCap:.round))
+        }
+        for (label,azimuth) in [("С",0.0),("В",90.0),("Ю",180.0),("З",270.0)] {
+            context.draw(Text(label).font(.system(size:11,weight:.bold)).foregroundStyle(.white.opacity(0.8)),
+                         at:screen(floorVector(azimuth,labelRadius)))
+        }
+        drawDevice(in:context,projection:projection,center:center,radius:radius)
+
+        // Batch all points by semantic state and depth, keeping Canvas work
+        // bounded while dragging. Hidden hemisphere points remain occluded.
+        var clouds = Array(repeating:Path(),count:16)
+        for point in SkyDomePoint.mesh {
+            let projected = projection.projected(point.vector)
+            guard projection.isVisible(point.vector) else { continue }
+            let depth = max(0,min(3,Int(projected.depth*4)))
+            let state = survey.cells[point.cell]
+            let position = screen(point.vector,elevated:true)
+            let dotRadius = CGFloat((state == .unknown ? 0.47:0.62)+Double(depth)*0.075)
+            clouds[state.rawValue*4+depth].addEllipse(in:CGRect(x:position.x-dotRadius,y:position.y-dotRadius,
+                                                             width:dotRadius*2,height:dotRadius*2))
+        }
+        for state in [SkyCellState.unknown,.observed,.clear,.blocked] {
+            for depth in 0..<4 {
+                let brightness = Double(depth)/3
+                let color: Color
+                switch state {
+                case .clear: color = .white.opacity(0.48+brightness*0.48)
+                case .blocked: color = Color(red:1,green:0.12,blue:0.22).opacity(0.56+brightness*0.44)
+                case .observed: color = Color(white:0.42).opacity(0.28+brightness*0.22)
+                case .unknown: color = Color(white:0.3).opacity(0.18+brightness*0.13)
+                }
+                context.fill(clouds[state.rawValue*4+depth],with:.color(color))
+            }
         }
 
         var track = Path()
@@ -168,49 +213,40 @@ struct SkyDomeView: View {
             for step in 1...count {
                 let next = a.interpolated(to:b,fraction:Double(step)/Double(count)).normalized
                 if let segment = projection.visibleSegment(from:previous,to:next) {
-                    track.move(to:screen(segment.0)); track.addLine(to:screen(segment.1))
+                    track.move(to:screen(segment.0,elevated:true)); track.addLine(to:screen(segment.1,elevated:true))
                 }
                 previous = next
             }
         }
-        context.stroke(track,with:.color(.black.opacity(0.35)),style:StrokeStyle(lineWidth:4,lineCap:.round,lineJoin:.round))
-        context.stroke(track,with:.color(Color(red:1,green:0.83,blue:0.32)),style:StrokeStyle(lineWidth:2,lineCap:.round,lineJoin:.round))
+        context.stroke(track,with:.color(Color(red:1,green:0.79,blue:0.35).opacity(0.65)),
+                       style:StrokeStyle(lineWidth:1,lineCap:.round,lineJoin:.round,dash:[3,4]))
         if let direction, let point = SkyDomeProjection.vector(direction), projection.isVisible(point) {
-            let p = screen(point)
-            context.fill(Path(ellipseIn:CGRect(x:p.x-7,y:p.y-7,width:14,height:14)),with:.color(.black.opacity(0.5)))
-            context.stroke(Path(ellipseIn:CGRect(x:p.x-5,y:p.y-5,width:10,height:10)),with:.color(.white),lineWidth:2)
-            context.fill(Path(ellipseIn:CGRect(x:p.x-1.5,y:p.y-1.5,width:3,height:3)),with:.color(.white))
-        }
-        for (label,azimuth) in [("С",0.0),("В",90.0),("Ю",180.0),("З",270.0)] {
-            guard let vector = SkyDomeProjection.vector(.init(azimuth:azimuth,elevation:0)) else { continue }
-            let p = projection.projected(vector)
-            // Keep all compass labels outside the silhouette, including the
-            // northern horizon that the opaque front of the dome conceals.
-            let verticalRadius = p.y >= 0 ? radius : radius*inclination
-            let multiplier = 1/sqrt(pow(p.x/radius,2)+pow(p.y/verticalRadius,2))
-            let length = sqrt(p.x*p.x+p.y*p.y)
-            let point = CGPoint(x:center.x+CGFloat(p.x*(multiplier+15/length)),y:center.y-CGFloat(p.y*(multiplier+15/length)))
-            context.draw(Text(label).font(.system(size:11,weight:.semibold)).foregroundStyle(.white.opacity(0.65)),at:point)
+            let p = screen(point,elevated:true)
+            context.fill(Path(ellipseIn:CGRect(x:p.x-5,y:p.y-5,width:10,height:10)),with:.color(.black.opacity(0.75)))
+            context.stroke(Path(ellipseIn:CGRect(x:p.x-4,y:p.y-4,width:8,height:8)),with:.color(.white),lineWidth:1.5)
+            context.fill(Path(ellipseIn:CGRect(x:p.x-1,y:p.y-1,width:2,height:2)),with:.color(.white))
         }
     }
 
-    private func surfaceShading(_ state: SkyCellState, center: CGPoint, radius: CGFloat) -> GraphicsContext.Shading {
-        let base: (Double,Double,Double)
-        switch state {
-        case .clear: base = (0.16,0.66,0.94)
-        case .blocked: base = (0.95,0.20,0.30)
-        case .observed: base = (0.25,0.29,0.34)
-        case .unknown: base = (0.15,0.18,0.22)
+    private func drawDevice(in context: GraphicsContext, projection: SkyDomeProjection, center: CGPoint, radius: Double) {
+        func point(_ x: Double,_ y: Double,_ z: Double = 0.035) -> CGPoint {
+            let p = projection.projected(.init(x:x,y:y,z:z))
+            return .init(x:center.x+CGFloat(p.x*radius),y:center.y-CGFloat(p.y*radius))
         }
-        func tone(_ brightness: Double) -> Color {
-            Color(red:base.0*brightness,green:base.1*brightness,blue:base.2*brightness)
+        var phone = Path()
+        for (index,corner) in [(-0.075,-0.14),(0.075,-0.14),(0.075,0.14),(-0.075,0.14)].enumerated() {
+            let p = point(corner.0,corner.1)
+            if index == 0 { phone.move(to:p) } else { phone.addLine(to:p) }
         }
-        // Every patch of a state samples the same continuous screen-space
-        // gradient, so tessellation does not produce visible lighting bands.
-        return .radialGradient(Gradient(stops:[
-            .init(color:tone(1.05),location:0),
-            .init(color:tone(0.85),location:0.48),
-            .init(color:tone(0.4),location:1)
-        ]),center:center,startRadius:0,endRadius:radius)
+        phone.closeSubpath()
+        context.fill(phone,with:.color(Color(white:0.12)))
+        context.stroke(phone,with:.color(.white.opacity(0.85)),style:StrokeStyle(lineWidth:1.2,lineJoin:.round))
+        var magnet = Path()
+        for step in 0...32 {
+            let angle = Double(step)/32 * 2 * .pi
+            let p = point(cos(angle)*0.044,sin(angle)*0.044,0.04)
+            if step == 0 { magnet.move(to:p) } else { magnet.addLine(to:p) }
+        }
+        context.stroke(magnet,with:.color(.white.opacity(0.5)),lineWidth:0.8)
     }
 }

@@ -46,4 +46,27 @@ final class SkySurveyTests: XCTestCase {
         XCTAssertEqual(result.title,"Обзор ещё не проверен")
         XCTAssertEqual(survey.assessment(path:[]).title,"Нужен прогноз пролёта")
     }
+    func testCoverageIsAreaWeightedAndNeverMeansClear() {
+        var horizon = SkySurvey(), zenith = SkySurvey(), full = SkySurvey()
+        horizon.collect([0]); zenith.collect([8*SkySurvey.columns])
+        XCTAssertGreaterThan(horizon.coverageFraction,zenith.coverageFraction)
+        full.collect(Set(full.cells.indices))
+        XCTAssertEqual(full.coverageFraction,1,"Complete coverage must format as exactly 100%, not 99% after floating-point summation.")
+        XCTAssertEqual(full.coveredCellCount,216)
+        XCTAssertTrue(full.cells.allSatisfy { $0 == .observed })
+        let assessment = full.assessment(path:[SkySurvey.direction(at:0),SkySurvey.direction(at:200)])
+        XCTAssertEqual(assessment.clear,0); XCTAssertEqual(assessment.unknown,2)
+        let before = full.coverageFraction
+        full.collect([-1,216,Int.max])
+        XCTAssertEqual(full.coverageFraction,before)
+    }
+    func testCollectionPreservesExplicitClassificationsAndIsIdempotent() {
+        var survey = SkySurvey()
+        let blocked = SkySurvey.direction(at:30), clear = SkySurvey.direction(at:150)
+        survey.mark(blocked,state:.blocked); survey.mark(clear,state:.clear)
+        XCTAssertEqual(survey.coverageFraction,0,"Manual classification is separate from camera coverage.")
+        survey.collect([30,150]); survey.collect([30,150])
+        XCTAssertEqual(survey.coveredCellCount,2)
+        XCTAssertEqual(survey.cells[30],.blocked); XCTAssertEqual(survey.cells[150],.clear)
+    }
 }

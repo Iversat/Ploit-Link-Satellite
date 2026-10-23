@@ -68,11 +68,11 @@ jobs:
           for KIND in $KINDS; do
             if [ "$KIND" = ios26-pro-max ]; then
               DEVICE="$SITE_DEVICE"
-              SCENES="home-day home-evening site-scan"
+              SCENES="home-day home-evening site-scan site-capture radar-back-intro radar-top-intro"
             else
               DEVICE=$(python3 -c 'import json,sys;d=json.load(open("build/available-simulators.json"));kind=sys.argv[1];runtime="iOS-18-" if kind=="ios18-pro-max" else "iOS-26-";name="iPhone 16 Pro Max" if kind=="ios18-pro-max" else "iPhone SE (3rd generation)";v=[x for k,a in sorted(d["devices"].items(),reverse=True) if runtime in k for x in a if x["name"]==name];assert v,"Required simulator unavailable: "+kind;print(v[0]["udid"])' "$KIND")
               echo "$DEVICE" >> build/site-devices.txt
-              SCENES="home site-scan"
+              SCENES="home site-scan site-capture radar-back-intro"
             fi
             xcrun simctl boot "$DEVICE" || true
             xcrun simctl bootstatus "$DEVICE" -b

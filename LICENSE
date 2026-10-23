@@ -1,9 +1,9 @@
-Ploit Space Source-Available License 1.0
-Effective date: 2026-10-20
+Ploit Link Satellite Source-Available License 1.1
+Effective date: 2026-10-23
 
 Copyright (c) 2026 Ploit Satellite contributors
-Project name: Ploit Space
-Official repository: https://github.com/Iversat/Ploit-Satellite-iOS
+Project name: Ploit Link Satellite (PLS)
+Official repository: https://github.com/Iversat/Ploit-Link-Satellite
 
 This is a custom source-available license, not the MIT License and not an
 OSI-approved open source license. The English text below is authoritative.
@@ -24,7 +24,7 @@ It does not grant ownership of the original Software or of the project name.
 
 When publishing or distributing the Software or a derivative version, You
 must preserve the original copyright notices and include this license.
-You must identify Ploit Space as the original project and provide its
+You must identify Ploit Link Satellite as the original project and provide its
 official repository URL in the accompanying documentation and, for an
 application, in an accessible About, Credits or Licenses screen.
 
@@ -35,15 +35,17 @@ identify Yourself as the author of Your own changes.
 3. Preservation of the project name
 
 When publishing, distributing, marketing or offering the Software or a
-derivative application under this license, You must retain "Ploit Space"
+derivative application under this license, You must retain "Ploit Link Satellite"
 as the primary project and application name, including in the displayed
 application name, principal user-interface title and download/product page.
+The abbreviation "PLS" is permitted in compact interface titles and the
+displayed application name when the full name is visible in About or Credits.
 You must not replace that name with Your own name or brand, conceal the
-Ploit Space identity, or offer a white-label or rebranded version without
+Ploit Link Satellite identity, or offer a white-label or rebranded version without
 separate written permission from the applicable copyright holders.
 
 Qualifying descriptions are permitted, provided the original name remains
-prominent. For example: "Ploit Space - unofficial fork by Example".
+prominent. For example: "Ploit Link Satellite - unofficial fork by Example".
 Internal package identifiers, build identifiers and repository paths may
 be changed when needed for development or distribution; those changes
 must not be used to hide the project's origin or replace its displayed name.

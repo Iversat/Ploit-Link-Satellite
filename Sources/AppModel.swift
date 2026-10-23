@@ -145,7 +145,7 @@ enum HomePanel: String, Identifiable {
             screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
             if preview.contains("orbits") { orbitPresented = true }
-            else if preview.contains("scan") { scannerPresented = true }
+            else if preview.contains("site-") { scannerPresented = true }
             else if preview == "--ui-screenshot-settings" { homePanel = .settings }
             else if preview.contains("catalogue") { homePanel = .satellites }
             else if !preview.contains("home") {

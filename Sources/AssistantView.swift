@@ -75,7 +75,7 @@ struct AssistantView: View {
                             Image(systemName: "location.fill").font(.system(size: 9))
                             Text(model.manualLocation ? "Координаты заданы вручную" : model.observer == nil ? "Ожидание геопозиции" : "Геопозиция на устройстве")
                             Text("·").padding(.horizontal,3)
-                            Text("PLOIT SPACE").tracking(1.5)
+                            Text("PLS").tracking(1.5)
                         }.font(.system(size: 10,weight: .medium)).foregroundStyle(.white.opacity(0.45)).padding(.bottom,18)
                     }.frame(minHeight:geometry.size.height)
                     }.scrollIndicators(.hidden)
@@ -138,9 +138,8 @@ private struct AssistantHeader: View {
     var body: some View {
         HStack {
             HStack(spacing:9) {
-                SatelliteGlyph().foregroundStyle(.black).padding(4).frame(width:30,height:30)
-                    .background(.white.opacity(0.85),in:RoundedRectangle(cornerRadius:8))
-                Text("Ploit Space").font(.system(size:22,weight:.semibold))
+                PLSGlyph().foregroundStyle(.white).frame(width:34,height:34)
+                PLSWordmark()
             }
             Spacer(minLength:6)
             Button(action:openSettings) {
