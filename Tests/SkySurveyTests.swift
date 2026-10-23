@@ -33,6 +33,9 @@ final class SkySurveyTests: XCTestCase {
         XCTAssertEqual(SkySurvey.index(azimuth:-15,elevation:20),SkySurvey.index(azimuth:345,elevation:20))
         XCTAssertNil(SkySurvey.index(azimuth:.nan,elevation:20))
         XCTAssertNil(SkySurvey.index(azimuth:0,elevation:-1))
+        var survey = SkySurvey()
+        survey.mark(.init(azimuth:7.5,elevation:-1),state:.clear)
+        XCTAssertFalse(survey.cells.contains(.clear))
     }
     func testManualClearAndUnknownRemainderCannotPromiseConnection() {
         var survey = SkySurvey()

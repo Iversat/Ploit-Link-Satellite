@@ -31,7 +31,7 @@ struct SkySurvey {
         }
     }
     mutating func mark(_ direction: SkyDirection, state: SkyCellState) {
-        guard state == .clear || state == .blocked else { return }
+        guard (state == .clear || state == .blocked), Self.index(azimuth:direction.azimuth,elevation:direction.elevation) != nil else { return }
         for index in cells.indices {
             let cell = Self.direction(at:index)
             if AimMath.separation(az1:direction.azimuth, el1:direction.elevation, az2:cell.azimuth, el2:cell.elevation) <= 12 {

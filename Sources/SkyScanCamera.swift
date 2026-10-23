@@ -63,12 +63,12 @@ import AVFoundation
         let position = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
         if origin == nil { origin = position }
         if let origin, simd_distance(origin,position) > 1.5 {
-            moved = true; stop(); message = "Точка изменилась. Начните новое сканирование у антенны."; return
+            moved = true; survey = SkySurvey(); stop(); message = "Точка изменилась. Начните новое сканирование у антенны."; return
         }
         let forward = -SIMD3<Float>(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
         direction = Self.skyDirection(forward)
         message = "\(Int(direction?.azimuth ?? 0))° азимут · \(Int(direction?.elevation ?? 0))° высота"
-        guard let direction, direction.elevation >= 0 else { message = "Поднимите камеру выше горизонта."; return }
+        guard let direction, direction.elevation >= 0 else { self.direction = nil; message = "Поднимите камеру выше горизонта."; return }
         var result = survey
         result.observe(direction)
         if let depth = frame.sceneDepth, let confidence = depth.confidenceMap {
@@ -81,6 +81,7 @@ import AVFoundation
                 let qualityStride = CVPixelBufferGetBytesPerRow(confidence)
                 let values = base.assumingMemoryBound(to:Float32.self), confidenceValues = quality.assumingMemoryBound(to:UInt8.self)
                 let intrinsics = frame.camera.intrinsics, resolution = frame.camera.imageResolution
+                var blockedCellsThisFrame = Set<Int>()
                 for row in 1...5 { for column in 1...5 {
                     let x = column * width / 6, y = row * height / 6
                     let px = Float(x) * Float(resolution.width) / Float(width)
@@ -89,8 +90,13 @@ import AVFoundation
                                            -(py-intrinsics.columns.2.y)/intrinsics.columns.1.y, -1, 0)
                     let world = transform * ray
                     let sample = Self.skyDirection(SIMD3<Float>(world.x,world.y,world.z))
-                    result.observe(sample,obstacleDistance:Double(values[y*stride+x]),
-                                   highConfidence:confidenceValues[y*qualityStride+x] == UInt8(ARConfidenceLevel.high.rawValue))
+                    let distance = Double(values[y*stride+x] * simd_length(SIMD3<Float>(ray.x,ray.y,ray.z)))
+                    var newConfidentSample = false
+                    if confidenceValues[y*qualityStride+x] == UInt8(ARConfidenceLevel.high.rawValue), distance.isFinite, (0.2...6).contains(distance),
+                       let cell = SkySurvey.index(azimuth:sample.azimuth,elevation:sample.elevation) {
+                        newConfidentSample = blockedCellsThisFrame.insert(cell).inserted
+                    }
+                    result.observe(sample,obstacleDistance:distance,highConfidence:newConfidentSample)
                 } }
             }
         }
@@ -121,6 +127,7 @@ struct SkyScanCamera: UIViewRepresentable {
     let controller: SkyScanController
     func makeUIView(context: Context) -> ARSCNView {
         let view = ARSCNView(frame:.zero)
+        view.scene = SCNScene()
         view.session = controller.session
         view.preferredFramesPerSecond = 30
         view.automaticallyUpdatesLighting = false

@@ -92,7 +92,7 @@ struct SiteScanView: View {
                 }
                 if scan.running {
                     Image(systemName:"plus").font(.system(size:30,weight:.ultraLight)).shadow(radius:3)
-                    VStack { Spacer(); Text("За стеклом видно небо? Отметьте участок кнопкой ниже.").font(.caption).padding(10).background(.black.opacity(0.6),in:Capsule()) }.padding(12)
+                    VStack { Spacer(); Text("В прицеле открытое небо? Отметьте участок кнопкой ниже.").font(.caption).padding(10).background(.black.opacity(0.6),in:Capsule()) }.padding(12)
                 }
             }.frame(height:245).clipShape(RoundedRectangle(cornerRadius:24))
             Text(scan.message).font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading).accessibilityIdentifier("scanStatus")
@@ -151,7 +151,7 @@ struct SkyDomeView: View {
             let center = CGPoint(x:size.width/2,y:size.height/2), radius = min(size.width,size.height)/2 - 22
             func point(_ direction: SkyDirection) -> CGPoint {
                 let r = radius * (90-min(90,max(0,direction.elevation)))/90, az = direction.azimuth * .pi/180
-                return CGPoint(x:center.x + sin(az)*r,y:center.y-cos(az)*r)
+                return CGPoint(x:center.x + CGFloat(sin(az))*r,y:center.y-CGFloat(cos(az))*r)
             }
             for fraction in [1.0, 2.0/3, 1.0/3] {
                 let r = radius*fraction
@@ -173,7 +173,7 @@ struct SkyDomeView: View {
             }
             for (text,az) in [("С",0.0),("В",90.0),("Ю",180.0),("З",270.0)] {
                 let a = az * .pi/180
-                context.draw(Text(text).font(.caption.bold()).foregroundStyle(.secondary),at:CGPoint(x:center.x+sin(a)*(radius+15),y:center.y-cos(a)*(radius+15)))
+                context.draw(Text(text).font(.caption.bold()).foregroundStyle(.secondary),at:CGPoint(x:center.x+CGFloat(sin(a))*(radius+15),y:center.y-CGFloat(cos(a))*(radius+15)))
             }
         }.accessibilityLabel("Карта обзора: голубой — отмеченное небо, красный — препятствия, серый — неизвестно, жёлтый — путь спутника")
     }
