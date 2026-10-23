@@ -2,6 +2,32 @@ import XCTest
 @testable import PloitSatellite
 
 final class SkyScanLifecycleTests: XCTestCase {
+    @MainActor func testEveryStopPathRequestsTorchOffAndPreviewCannotEnableIt() {
+        let torch = TestSkyScanTorch()
+        let scan = SkyScanController(torch:torch)
+        scan.preview(capture:true)
+        scan.toggleTorch()
+        XCTAssertFalse(scan.torchAvailable)
+        scan.finish()
+        scan.invalidate("Background")
+        scan.sessionWasInterrupted(scan.session)
+        scan.session(scan.session,didFailWithError:NSError(domain:"Test",code:1))
+        XCTAssertEqual(torch.commands,[false,false,false,false,false])
+        XCTAssertFalse(scan.isTorchOn); XCTAssertFalse(scan.torchAvailable)
+    }
+
+    @MainActor func testLateTorchReplyCannotOverrideNewerStopRequest() {
+        let torch = TestSkyScanTorch(deferred:true)
+        let scan = SkyScanController(torch:torch)
+        scan.stop()
+        scan.stop()
+        torch.complete(at:0,active:true)
+        XCTAssertFalse(scan.isTorchOn,"An obsolete ON/status reply must not resurrect the torch UI after Stop.")
+        torch.complete(at:1,active:false)
+        XCTAssertFalse(scan.isTorchOn); XCTAssertFalse(scan.torchAvailable)
+        XCTAssertEqual(torch.commands,[false,false])
+    }
+
     func testLocationChangeIgnoresSmallGPSNoiseButInvalidatesAnotherPoint() {
         let origin = Observer(latitude:48.708,longitude:44.513,altitudeM:100)
         XCTAssertFalse(SkyScanLocation.changed(from:origin,to:origin))
@@ -44,4 +70,20 @@ final class SkyScanLifecycleTests: XCTestCase {
         XCTAssertTrue(controller.survey.cells.allSatisfy { $0 == .unknown })
         XCTAssertEqual(controller.message,"Требуется новая проверка")
     }
+}
+
+
+@MainActor private final class TestSkyScanTorch: SkyScanTorchControlling {
+    var available = true
+    var isOn = false
+    var commands: [Bool] = []
+    private var replies: [@MainActor (Bool,String?) -> Void] = []
+    private let deferred: Bool
+    init(deferred: Bool = false) { self.deferred = deferred }
+    func setOn(_ enabled: Bool, completion: @escaping @MainActor (Bool,String?) -> Void) {
+        commands.append(enabled)
+        if deferred { replies.append(completion) }
+        else { isOn = enabled; completion(enabled,nil) }
+    }
+    func complete(at index: Int, active: Bool) { isOn = active; replies[index](active,nil) }
 }

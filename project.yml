@@ -23,13 +23,13 @@ targets:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: PLS
-        CFBundleShortVersionString: "1.5.0"
-        CFBundleVersion: "15"
+        CFBundleShortVersionString: "1.6.0"
+        CFBundleVersion: "16"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark
-        NSLocationWhenInUseUsageDescription: Ваше положение нужно для расчёта направления на спутник и времени пролёта. Только по кнопке загрузки погоды округлённые координаты передаются Open-Meteo.
+        NSLocationWhenInUseUsageDescription: Ваше положение нужно для расчёта направления на спутник и времени пролёта. Для автоматического обновления погоды округлённые координаты передаются Open-Meteo при открытии приложения.
         NSMotionUsageDescription: Датчики движения нужны, чтобы навести верхний торец телефона или внешнюю антенну на спутник.
         NSCameraUsageDescription: Камера и LiDAR нужны для карты препятствий на пути спутника. Кадры обрабатываются на устройстве и не отправляются.
     settings:

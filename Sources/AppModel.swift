@@ -1,4 +1,5 @@
 import SwiftUI
+import Network
 
 enum HomePanel: String, Identifiable {
     case satellites, passes, settings
@@ -49,6 +50,7 @@ enum HomePanel: String, Identifiable {
     }
     @Published var pointingIntro = false
     let sensors = Sensors()
+    let weatherService = SiteWeatherService()
     private let engine = OrbitEngine()
     private let fleetEngine = OrbitEngine()
     private let store = ElementStore()
@@ -66,6 +68,14 @@ enum HomePanel: String, Identifiable {
     private var sessionsUpdated = Date.distantPast
     private var screenshotMode = false
     private var automaticSelectionTask: Task<Void,Never>?
+    private var activationTask: Task<Void,Never>?
+    private var remoteTask: Task<Void,Never>?
+    private var remoteToken = UUID()
+    private var networkCleanup: Task<Void,Never>?
+    private var networkMonitor: NWPathMonitor?
+    private var networkToken = UUID()
+    private var networkAvailable = false
+    private var nextRemoteCheck = Date.distantPast
     var recommendedSession: SessionRecommendation? {
         SessionRecommendation.best(satellites:satellites,windows:sessionWindows,contexts:sessionContexts,
                                    elements:fleetElements,observer:observer,minimumElevation:minElevation,
@@ -183,7 +193,8 @@ enum HomePanel: String, Identifiable {
         #endif
         sensors.start()
         UIApplication.shared.isIdleTimerDisabled = pointing
-        Task { await select(id: selectedID) }
+        startNetworkMonitoring()
+        activationTask = Task { await select(id: selectedID) }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -192,7 +203,64 @@ enum HomePanel: String, Identifiable {
             }
         }
     }
-    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; localSessionsReady=false; automaticSelectionTask?.cancel(); automaticSelectionTask=nil; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
+    func deactivate() {
+        activated=false; ticker?.cancel(); ticker=nil
+        activationTask?.cancel(); activationTask=nil; selectionToken=UUID(); refreshToken=UUID(); updating=false
+        passTask?.cancel(); predicting=false
+        fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; localSessionsReady=false
+        automaticSelectionTask?.cancel(); automaticSelectionTask=nil
+        stopNetworkRequests()
+        networkMonitor?.cancel(); networkMonitor=nil; networkToken=UUID(); networkAvailable=false
+        sensors.stop(); UIApplication.shared.isIdleTimerDisabled=false
+    }
+    private func startNetworkMonitoring() {
+        let token=UUID(); networkToken=token
+        let monitor=NWPathMonitor(); networkMonitor=monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            let available=path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self, self.activated, self.networkToken==token else { return }
+                self.networkAvailable=available
+                if !available { self.stopNetworkRequests() }
+                self.weatherService.refreshIfNeeded(observer:self.observer,networkAvailable:available)
+                if available { self.nextRemoteCheck = .distantPast; self.refreshRemoteDataIfNeeded() }
+            }
+        }
+        monitor.start(queue:DispatchQueue(label:"ru.ploit.satellite.connectivity"))
+    }
+    private func stopNetworkRequests() {
+        remoteTask?.cancel(); remoteTask=nil; remoteToken=UUID()
+        weatherService.cancel()
+        let previous=networkCleanup
+        networkCleanup=Task { await previous?.value; await store.cancelUpdates() }
+    }
+    private func refreshRemoteDataIfNeeded() {
+        guard activated, !screenshotMode, networkAvailable, remoteTask==nil else { return }
+        let date=Date()
+        guard date>=nextRemoteCheck || nextRemoteCheck.timeIntervalSince(date)>60 else { return }
+        nextRemoteCheck=date.addingTimeInterval(60)
+        let token=networkToken, requestToken=UUID(); remoteToken=requestToken
+        let ids=[selectedID]+satellites.map(\.id).filter{$0 != selectedID}
+        remoteTask=Task { [weak self] in
+            guard let self else { return }
+            await networkCleanup?.value
+            defer { if remoteToken==requestToken { remoteTask=nil } }
+            var changed=false
+            for id in ids {
+                guard !Task.isCancelled, activated, networkAvailable, networkToken==token else { return }
+                guard await store.needsUpdate(id:id) else { continue }
+                if let value=try? await store.update(id:id) {
+                    guard !Task.isCancelled, activated, networkAvailable, networkToken==token else { return }
+                    if fleetElements[id] != value {
+                        fleetElements[id]=value; changed=true
+                        if selectedID==id { elements=value; lastPrediction = .distantPast; error=nil }
+                    }
+                }
+            }
+            guard !Task.isCancelled, activated, networkAvailable, networkToken==token, remoteToken==requestToken else { return }
+            if changed { sessionsUpdated = .distantPast; refreshSessions(force:true) }
+        }
+    }
     func select(id: Int, preferredModeID: String? = nil) async {
         let token = UUID(); selectionToken = token
         refreshToken = UUID(); updating = false
@@ -203,16 +271,17 @@ enum HomePanel: String, Identifiable {
         look = nil; futureLook = nil; elements = nil; passes = []; error = nil
         passTask?.cancel(); predicting = false; passObserver = nil; lastPrediction = .distantPast
         let cached = await store.cached(id: id)
-        guard selectionToken == token else { return }
+        guard !Task.isCancelled, selectionToken == token else { return }
         elements = cached
         fleetElements[id] = cached
         await loadFleetElements()
-        guard selectionToken == token else { return }
+        guard !Task.isCancelled, selectionToken == token else { return }
         await tick()
-        if !screenshotMode && (cached == nil || (cached?.ageDays() ?? 99) > 1) { await refresh() }
+        refreshRemoteDataIfNeeded()
     }
     func loadFleetElements() async {
         for id in satellites.map(\.id) where fleetElements[id] == nil {
+            guard !Task.isCancelled else { return }
             fleetElements[id]=await store.cached(id:id)
         }
     }
@@ -221,15 +290,21 @@ enum HomePanel: String, Identifiable {
         let id = selectedID, token = UUID(); refreshToken = token; updating = true
         defer { if refreshToken == token { updating = false } }
         do {
+            await networkCleanup?.value
             let value = try await store.update(id: id)
-            guard refreshToken == token, selectedID == id else { return }
+            guard !Task.isCancelled, refreshToken == token, selectedID == id else { return }
             elements = value; fleetElements[id] = value; error = nil; lastPrediction = .distantPast
+            refreshSessions(force:true)
             await tick()
         } catch { if refreshToken == token { self.error = error.localizedDescription } }
     }
     func tick(at date: Date = Date()) async {
         clock = date
         sensors.axis = axis
+        if activated && !screenshotMode {
+            weatherService.refreshIfNeeded(observer:observer,networkAvailable:networkAvailable)
+            refreshRemoteDataIfNeeded()
+        }
         if let observer {
             let moved=sessionsObserver.map { !SessionPredictionContext.sameLocation($0,observer) } ?? true
             if !calculatingSessions && (moved || sessionsMask != minElevation || clock.timeIntervalSince(sessionsUpdated)>300) { refreshSessions() }
@@ -293,22 +368,6 @@ enum HomePanel: String, Identifiable {
                 }
             }
             completeLocalSessionCalculation()
-            guard !screenshotMode else { return }
-            for id in ids {
-                guard !Task.isCancelled, fleetToken==token else { return }
-                if force || (fleetElements[id]?.ageDays(at:date) ?? 999)>1 {
-                    if let value=try? await store.update(id:id) {
-                        guard fleetToken==token else { return }
-                        fleetElements[id]=value
-                        if selectedID==id { elements=value; lastPrediction = .distantPast }
-                        if let windows=try? await fleetEngine.passes(elements:value,observer:observer,date:date,minElevation:mask) {
-                            guard !Task.isCancelled, fleetToken==token else { return }
-                            sessionWindows[id]=windows
-                            sessionContexts[id]=SessionPredictionContext(observer:observer,minimumElevation:mask,elements:value)
-                        }
-                    }
-                }
-            }
         }
     }
     func saveSettings() {

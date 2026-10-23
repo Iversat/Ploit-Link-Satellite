@@ -26,8 +26,15 @@ struct SkyScanProjection {
         let az = direction.azimuth * .pi / 180, el = direction.elevation * .pi / 180
         return SIMD3(Float(sin(az) * cos(el)),Float(sin(el)),Float(-cos(az) * cos(el)))
     }
+    static let targetDirections: [SIMD3<Float>] = (0..<SkySurvey.columns*SkySurvey.rows).map {
+        worldDirection(SkySurvey.direction(at:$0))!
+    }
     func project(_ direction: SkyDirection) -> CGPoint? {
-        guard let world = Self.worldDirection(direction), imageSize.width > 0, imageSize.height > 0 else { return nil }
+        guard let world = Self.worldDirection(direction) else { return nil }
+        return project(world:world)
+    }
+    func project(world: SIMD3<Float>) -> CGPoint? {
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
         let local = cameraRotation.transpose * world
         let fx = intrinsics.columns.0.x, fy = intrinsics.columns.1.y
         guard local.x.isFinite, local.y.isFinite, local.z.isFinite, local.z < -0.0001,
@@ -58,5 +65,30 @@ struct SkyScanDwell {
             progress[id] = min(1,max(0,(timestamp - start) / Self.duration))
         }
         return progress
+    }
+}
+
+
+struct SkyScanCollectionFeedback {
+    static let minimumInterval = 0.25
+    private var lastPulse: TimeInterval?
+    mutating func reset() { lastPulse = nil }
+    mutating func shouldPulse(newCount: Int, at time: TimeInterval, collecting: Bool, preview: Bool) -> Bool {
+        guard collecting, !preview, newCount > 0, time.isFinite else { return false }
+        if let lastPulse, time < lastPulse { self.lastPulse = nil }
+        guard lastPulse == nil || time-lastPulse! >= Self.minimumInterval else { return false }
+        lastPulse = time
+        return true
+    }
+}
+
+enum SkyScanInitialHeading {
+    static func capture(current: Double?, direction: SkyDirection?, collecting: Bool,
+                        trackingReady: Bool, headingReady: Bool) -> Double? {
+        guard current == nil, collecting, trackingReady, headingReady, let direction,
+              direction.azimuth.isFinite, direction.elevation.isFinite,
+              (0..<89).contains(direction.elevation) else { return current }
+        // An almost vertical optical axis has no stable azimuth.
+        return (direction.azimuth.truncatingRemainder(dividingBy:360)+360).truncatingRemainder(dividingBy:360)
     }
 }

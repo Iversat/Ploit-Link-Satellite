@@ -8,8 +8,15 @@ struct SkyDirection: Equatable {
 }
 
 struct SkySurvey {
-    static let columns = 24
-    static let rows = 9
+    static let columns = 72
+    static let rows = 18
+    static let azimuthStep = 360.0 / Double(columns)
+    static let elevationStep = 90.0 / Double(rows)
+    private static let rowAreas = (0..<rows).map { row in
+        let lower = Double(row) * elevationStep * .pi / 180
+        let upper = Double(row + 1) * elevationStep * .pi / 180
+        return (sin(upper)-sin(lower)) / Double(columns)
+    }
     private(set) var cells = Array(repeating: SkyCellState.unknown, count: SkySurvey.columns * SkySurvey.rows)
     // Coverage records camera dwell, independently of an open/blocked classification.
     private(set) var collectedCells: Set<Int> = []
@@ -23,10 +30,7 @@ struct SkySurvey {
         // The complete hemisphere has solid angle 2π; each row contributes
         // sin(upper elevation) - sin(lower elevation), divided across columns.
         return min(1,max(0,collectedCells.reduce(0) { sum,index in
-            let row = index / Self.columns
-            let lower = Double(row) * 10 * .pi / 180
-            let upper = Double(row + 1) * 10 * .pi / 180
-            return sum + (sin(upper) - sin(lower)) / Double(Self.columns)
+            sum + Self.rowAreas[index / Self.columns]
         }))
     }
     mutating func collect(_ indices: Set<Int>) {
@@ -39,10 +43,10 @@ struct SkySurvey {
     static func index(azimuth: Double, elevation: Double) -> Int? {
         guard azimuth.isFinite, elevation.isFinite, (0...90).contains(elevation) else { return nil }
         let az = (azimuth.truncatingRemainder(dividingBy:360) + 360).truncatingRemainder(dividingBy:360)
-        return min(rows - 1, Int(elevation / 10)) * columns + Int(az / 15)
+        return min(rows - 1, Int(elevation / elevationStep)) * columns + min(columns - 1,Int(az / azimuthStep))
     }
     static func direction(at index: Int) -> SkyDirection {
-        .init(azimuth:Double(index % columns) * 15 + 7.5, elevation:Double(index / columns) * 10 + 5)
+        .init(azimuth:(Double(index % columns)+0.5) * azimuthStep, elevation:(Double(index / columns)+0.5) * elevationStep)
     }
     mutating func observe(_ direction: SkyDirection, obstacleDistance: Double? = nil, highConfidence: Bool = false) {
         guard let index = Self.index(azimuth:direction.azimuth, elevation:direction.elevation) else { return }

@@ -2,6 +2,37 @@ import XCTest
 
 final class SiteScanFlowTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    func testSkyModesPathAndNeutralInformationReturnToMap() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-site-scan"]; app.launch()
+        XCTAssertTrue(app.buttons["closeSiteScan"].waitForExistence(timeout:10))
+        let mode = app.segmentedControls["skyViewMode"]
+        let scroll = app.scrollViews.firstMatch
+        func reveal(_ element:XCUIElement) {
+            for _ in 0..<5 where !element.isHittable {
+                scroll.coordinate(withNormalizedOffset:CGVector(dx:0.97,dy:0.80))
+                    .press(forDuration:0.05,thenDragTo:scroll.coordinate(withNormalizedOffset:CGVector(dx:0.97,dy:0.45)))
+            }
+            XCTAssertTrue(element.isHittable)
+        }
+        reveal(mode)
+        mode.buttons["Гироскоп"].tap()
+        XCTAssertTrue(mode.buttons["Гироскоп"].isSelected)
+        mode.buttons["От точки старта"].tap()
+        XCTAssertTrue(mode.buttons["От точки старта"].isSelected)
+        let path = app.buttons["toggleSkyPassPath"]
+        reveal(path)
+        XCTAssertEqual(path.value as? String,"Скрыт")
+        path.tap()
+        XCTAssertEqual(path.value as? String,"Показан")
+        app.buttons["siteScanInformation"].tap()
+        XCTAssertTrue(app.staticTexts["Что означает процент"].waitForExistence(timeout:5))
+        let screenshot = XCTAttachment(screenshot:app.screenshot())
+        screenshot.name = "sky-information"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["Готово"].tap()
+        XCTAssertTrue(app.buttons["closeSiteScan"].waitForExistence(timeout:5))
+        app.buttons["closeSiteScan"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
+    }
     func testWeatherIsOptionalAndScannerClosesAfterOpeningConditions() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-site-scan"]; app.launch()
         XCTAssertTrue(app.buttons["closeSiteScan"].waitForExistence(timeout:10))
@@ -60,6 +91,8 @@ final class SiteScanFlowTests: XCTestCase {
         XCTAssertTrue(dots.exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label == %@","Демонстрация · камера не используется")).firstMatch.exists)
         XCTAssertFalse(app.otherElements["skyCamera"].exists,"This fixture must not start a hardware camera session.")
+        XCTAssertTrue(app.buttons["scanTorch"].exists)
+        XCTAssertFalse(app.buttons["scanTorch"].isEnabled,"Simulator preview must not claim a hardware flashlight.")
         XCTAssertTrue(app.staticTexts["Процент — охват камеры, не качество сигнала"].exists)
         let camera = XCTAttachment(screenshot:XCUIScreen.main.screenshot())
         camera.name = "scan-camera"; camera.lifetime = .keepAlways; add(camera)

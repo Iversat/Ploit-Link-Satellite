@@ -31,7 +31,7 @@ final class SiteWeatherTests: XCTestCase {
     }
 
     @MainActor func testOnlyExplicitLocalRecordProducesWeatherAndRejectsEmptyObservation() {
-        let service = SiteWeatherService()
+        let service = SiteWeatherService(persistsCache:false)
         XCTAssertNil(service.weather)
         XCTAssertNil(service.forecast)
         XCTAssertFalse(service.isLoading)
@@ -101,7 +101,7 @@ final class SiteWeatherTests: XCTestCase {
     }
 
     @MainActor func testInvalidOnlineCoordinatesDoNotLoadAndManualRecordIsPreserved() {
-        let service = SiteWeatherService()
+        let service = SiteWeatherService(persistsCache:false)
         service.record(sky: .cloudy, wind: .calm, temperatureC: 10)
         service.load(observer: Observer(latitude: 0, longitude: 181, altitudeM: 0))
         XCTAssertFalse(service.isLoading)
@@ -111,4 +111,112 @@ final class SiteWeatherTests: XCTestCase {
         service.clear()
         XCTAssertNil(service.errorMessage)
     }
+
+    @MainActor func testAutomaticWeatherDeduplicatesAndReusesPersistentRoundedLocationCache() async throws {
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let date=Date(timeIntervalSince1970:1792774800)
+        let network=WeatherNetworkStub(date:date)
+        let url=folder.appendingPathComponent("weather.json")
+        let service=SiteWeatherService(cacheURL:url,now:{date},loader:{try await network.load($0)})
+        let point=Observer(latitude:48.708123,longitude:44.513456,altitudeM:100)
+        service.refreshIfNeeded(observer:point,networkAvailable:true)
+        service.refreshIfNeeded(observer:point,networkAvailable:true)
+        await settle(service)
+        XCTAssertNotNil(service.forecast)
+        await assertCount(network,1)
+        let requests=await network.requests()
+        XCTAssertTrue(try XCTUnwrap(requests.first?.url?.absoluteString).contains("latitude=48.71"))
+        service.refreshIfNeeded(observer:point,networkAvailable:true)
+        XCTAssertFalse(service.isLoading)
+        let restored=SiteWeatherService(cacheURL:url,now:{date.addingTimeInterval(100)},loader:{try await network.load($0)})
+        restored.refreshIfNeeded(observer:Observer(latitude:48.709,longitude:44.514,altitudeM:800),networkAvailable:true)
+        XCTAssertEqual(restored.forecast,service.forecast)
+        XCTAssertFalse(restored.isLoading)
+        await assertCount(network,1)
+    }
+
+    @MainActor func testOfflineAndUnknownLocationNeverFetchButCachedForecastSurvivesFailure() async throws {
+        let clock=WeatherTestClock(Date(timeIntervalSince1970:1792774800))
+        let network=WeatherNetworkStub(date:clock.value)
+        let service=SiteWeatherService(persistsCache:false,now:{clock.value},loader:{try await network.load($0)})
+        service.refreshIfNeeded(observer:nil,networkAvailable:true)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:false)
+        XCTAssertFalse(service.isLoading)
+        await assertCount(network,0)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        await settle(service)
+        let cached=try XCTUnwrap(service.forecast)
+        clock.advance(901)
+        await network.setFailure(true)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        await settle(service)
+        XCTAssertEqual(service.forecast,cached)
+        XCTAssertNotNil(service.errorMessage)
+        await assertCount(network,2)
+        clock.advance(120)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        XCTAssertFalse(service.isLoading)
+        await assertCount(network,2)
+        clock.advance(181)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        await settle(service)
+        await assertCount(network,3)
+        XCTAssertEqual(service.forecast,cached)
+    }
+
+    @MainActor func testLocationChangeAndCancellationCannotPublishOldWeatherForNewPlace() async throws {
+        let date=Date(timeIntervalSince1970:1792774800)
+        let network=WeatherNetworkStub(date:date,delay:80_000_000)
+        let service=SiteWeatherService(persistsCache:false,now:{date},loader:{try await network.load($0)})
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        for _ in 0..<100 {
+            if await network.count()>0 { break }
+            try await Task.sleep(nanoseconds:1_000_000)
+        }
+        service.useLocation(Observer(latitude:0,longitude:0,altitudeM:0))
+        try await Task.sleep(nanoseconds:120_000_000)
+        XCTAssertFalse(service.isLoading)
+        XCTAssertNil(service.forecast)
+        XCTAssertNil(service.errorMessage)
+        await assertCount(network,1)
+    }
+
+    @MainActor private func settle(_ service: SiteWeatherService) async {
+        for _ in 0..<200 {
+            if !service.isLoading { return }
+            try? await Task.sleep(nanoseconds:5_000_000)
+        }
+        XCTAssertFalse(service.isLoading,"The stubbed weather request must finish")
+    }
+    private func assertCount(_ network:WeatherNetworkStub,_ expected:Int) async {
+        let actual=await network.count()
+        XCTAssertEqual(actual,expected)
+    }
+}
+
+private actor WeatherNetworkStub {
+    private var calls:[URLRequest]=[]
+    private var fails=false
+    private let date:Date
+    private let delay:UInt64
+    init(date:Date,delay:UInt64=10_000_000) { self.date=date; self.delay=delay }
+    func setFailure(_ value:Bool) { fails=value }
+    func count()->Int { calls.count }
+    func requests()->[URLRequest] { calls }
+    func load(_ request:URLRequest) async throws -> (Data,URLResponse) {
+        calls.append(request)
+        try await Task.sleep(nanoseconds:delay)
+        if fails { throw URLError(.notConnectedToInternet) }
+        let data=Data("{\"current\":{\"time\":\(date.timeIntervalSince1970),\"interval\":900,\"temperature_2m\":10,\"cloud_cover\":70,\"wind_speed_10m\":2}}".utf8)
+        return (data,HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
+    }
+}
+
+private final class WeatherTestClock: @unchecked Sendable {
+    private let lock=NSLock()
+    private var date:Date
+    init(_ date:Date) { self.date=date }
+    var value:Date { lock.lock(); defer { lock.unlock() }; return date }
+    func advance(_ seconds:TimeInterval) { lock.lock(); defer { lock.unlock() }; date=date.addingTimeInterval(seconds) }
 }

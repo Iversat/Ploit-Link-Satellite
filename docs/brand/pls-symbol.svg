@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="1024" height="1024" role="img">
+<title>PLS — Satellite and orbit arc</title>
+<rect width="256" height="256" fill="#030507"/>
+<polyline points="66.0925,166.6841 189.9075,89.3159" fill="none" stroke="#f4f6f8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="43.3042,149.086 84.8585,123.12 113.4742,168.9146 71.9198,194.8806" fill="#f4f6f8"/>
+<polygon points="95.7786,100.967 117.8279,87.1891 160.2214,155.033 138.1721,168.8109" fill="#f4f6f8"/>
+<polygon points="142.5258,87.0854 184.0802,61.1194 212.6958,106.914 171.1415,132.88" fill="#f4f6f8"/>
+<polyline points="65.777,139.7601 90.1533,178.7703" fill="none" stroke="#030507" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="165.8467,77.2297 190.223,116.2399" fill="none" stroke="#030507" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 224.8366 148.5833 A 99 99 0 0 1 100.7119 223.1649" fill="none" stroke="#f4f6f8" stroke-width="4" stroke-linecap="round"/>
+</svg>
+

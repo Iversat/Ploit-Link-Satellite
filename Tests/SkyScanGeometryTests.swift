@@ -8,6 +8,40 @@ final class SkyScanGeometryTests: XCTestCase {
                             display: CGAffineTransform = .identity) -> SkyScanProjection {
         .init(cameraRotation:rotation,intrinsics:intrinsics,imageSize:CGSize(width:1000,height:1000),imageToViewport:display)
     }
+    func testCachedDenseTargetsMatchSurveyDirections() throws {
+        XCTAssertEqual(SkyScanProjection.targetDirections.count,SkySurvey.columns*SkySurvey.rows)
+        let p = projection()
+        for (index,world) in SkyScanProjection.targetDirections.enumerated() {
+            let expected = try XCTUnwrap(SkyScanProjection.worldDirection(SkySurvey.direction(at:index)))
+            XCTAssertLessThan(simd_distance(world,expected),0.000001)
+            XCTAssertEqual(p.project(world:world),p.project(SkySurvey.direction(at:index)))
+        }
+    }
+    func testCollectionFeedbackIsNewOnlyThrottledAndSilentInInspectionOrPreview() {
+        var feedback = SkyScanCollectionFeedback()
+        XCTAssertFalse(feedback.shouldPulse(newCount:0,at:0,collecting:true,preview:false))
+        XCTAssertTrue(feedback.shouldPulse(newCount:20,at:0,collecting:true,preview:false))
+        XCTAssertFalse(feedback.shouldPulse(newCount:1,at:0.24,collecting:true,preview:false))
+        XCTAssertTrue(feedback.shouldPulse(newCount:1,at:0.25,collecting:true,preview:false))
+        XCTAssertFalse(feedback.shouldPulse(newCount:1,at:1,collecting:false,preview:false))
+        XCTAssertFalse(feedback.shouldPulse(newCount:1,at:1,collecting:true,preview:true))
+        XCTAssertFalse(feedback.shouldPulse(newCount:0,at:1,collecting:true,preview:false))
+        XCTAssertFalse(feedback.shouldPulse(newCount:1,at:.nan,collecting:true,preview:false))
+        feedback.reset()
+        XCTAssertTrue(feedback.shouldPulse(newCount:1,at:0,collecting:true,preview:false))
+    }
+    func testInitialHeadingRequiresValidScanPoseAndNeverFollowsLaterRotation() {
+        let pose = SkyDirection(azimuth:-10,elevation:45)
+        XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:false,headingReady:true))
+        XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:true,headingReady:false))
+        XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:false,trackingReady:true,headingReady:true))
+        for elevation in [-1.0,90,.nan] {
+            XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:.init(azimuth:10,elevation:elevation),collecting:true,trackingReady:true,headingReady:true))
+        }
+        let initial = SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:true,headingReady:true)
+        XCTAssertEqual(initial,350)
+        XCTAssertEqual(SkyScanInitialHeading.capture(current:initial,direction:.init(azimuth:80,elevation:40),collecting:true,trackingReady:true,headingReady:true),350)
+    }
     func testTrueNorthEastAndZenithUseARWorldAxes() throws {
         let north = try XCTUnwrap(SkyScanProjection.worldDirection(.init(azimuth:0,elevation:0)))
         let east = try XCTUnwrap(SkyScanProjection.worldDirection(.init(azimuth:90,elevation:0)))
@@ -63,6 +97,9 @@ final class SkyScanGeometryTests: XCTestCase {
         scan.preview(capture:true)
         XCTAssertFalse(scan.running)
         XCTAssertTrue(scan.collecting)
+        XCTAssertEqual(scan.startAzimuth,135)
+        XCTAssertFalse(scan.torchAvailable); XCTAssertFalse(scan.isTorchOn)
+        XCTAssertTrue(scan.projectedTargets.contains(where: { !$0.collected }))
         XCTAssertEqual(scan.coverageFraction,0.5,accuracy:0.000001)
         XCTAssertFalse(scan.projectedTargets.isEmpty)
         let cells = scan.survey.cells, collected = scan.survey.collectedCells
@@ -73,8 +110,10 @@ final class SkyScanGeometryTests: XCTestCase {
         XCTAssertEqual(scan.survey.cells,cells); XCTAssertEqual(scan.survey.collectedCells,collected)
         scan.finish()
         XCTAssertTrue(scan.isSnapshot); XCTAssertFalse(scan.running)
+        XCTAssertEqual(scan.startAzimuth,135)
         XCTAssertEqual(scan.survey.cells,cells); XCTAssertEqual(scan.survey.collectedCells,collected)
         scan.invalidate("Moved")
         XCTAssertEqual(scan.coverageFraction,0); XCTAssertFalse(scan.survey.hasRecordedData)
+        XCTAssertNil(scan.startAzimuth)
     }
 }

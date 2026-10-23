@@ -15,6 +15,8 @@ struct SiteScanView: View {
     @StateObject private var scan = SkyScanController()
     @State private var screen: Screen = .introduction
     @State private var information = false
+    @State private var followsPhone = false
+    @State private var showPassPath = false
     @State private var starting = false
     @State private var path: [SkyDirection] = []
     @State private var pathMessage = "Рассчитываем путь пролёта…"
@@ -41,17 +43,38 @@ struct SiteScanView: View {
         return false
         #endif
     }
+    private var demoViewingDirection: SkyDirection? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-site-gyro") {
+            return .init(azimuth:220,elevation:40)
+        }
+        #endif
+        return nil
+    }
+    private var scanOriginLabel: String {
+        guard let azimuth = scan.startAzimuth else { return "Направление ещё не записано" }
+        let bearing = (azimuth.truncatingRemainder(dividingBy:360)+360).truncatingRemainder(dividingBy:360)
+        let compass = ["С","СВ","В","ЮВ","Ю","ЮЗ","З","СЗ"][Int((bearing+22.5)/45)%8]
+        return "Начало · \(compass) · \(Int(bearing.rounded())%360)°"
+    }
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if cameraScreen { cameraLayer.ignoresSafeArea(); cameraControls }
             else { VStack(spacing:0) { header; ScrollView { if screen == .result { resultContent } else { introduction } }.scrollIndicators(.hidden) } }
-        }.foregroundStyle(.white).preferredColorScheme(.dark)
+        }.foregroundStyle(.white).tint(.white).preferredColorScheme(.dark)
             .sheet(isPresented:$information) { informationSheet }
             .task(id:pathKey) { await loadPath() }
             .onAppear {
                 #if DEBUG
-                if preview { scan.preview(capture:capturePreview); screen = capturePreview ? .scanning:.result }
+                if preview {
+                    scan.preview(capture:capturePreview)
+                    screen = capturePreview ? .scanning:.result
+                    let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--ui-screenshot-site-intro") { screen = .introduction }
+                    if arguments.contains("--ui-screenshot-site-info") { information = true }
+                    if arguments.contains("--ui-screenshot-site-gyro") { followsPhone = true }
+                }
                 #endif
             }
             .task {
@@ -76,7 +99,7 @@ struct SiteScanView: View {
     }
     private var header: some View {
         HStack {
-            Button(action:close) { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }
+            Button(action:close) { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Circle()).satelliteGlass(in:Circle(),interactive:true) }
                 .accessibilityLabel("Закрыть проверку места").accessibilityIdentifier("closeSiteScan")
             Spacer()
             Text(cameraScreen ? (screen == .inspecting ? "Осмотр места":"Сканирование") : (screen == .result ? "Обзор неба":"Проверка места"))
@@ -85,8 +108,8 @@ struct SiteScanView: View {
             Button {
                 if cameraScreen { captureTask?.cancel(); scan.finish(); screen = .result }
                 information = true
-            } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("О проверке места")
-        }.padding(.horizontal,12).padding(.vertical,4).background(cameraScreen ? Color.black.opacity(0.25):.clear)
+            } label: { Image(systemName:"info.circle").frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true) }.accessibilityLabel("О проверке места").accessibilityIdentifier("siteScanInformation")
+        }.buttonStyle(.plain).padding(.horizontal,20).padding(.vertical,8)
     }
     private var introduction: some View {
         VStack(alignment:.leading,spacing:28) {
@@ -110,11 +133,34 @@ struct SiteScanView: View {
     private var resultContent: some View {
         VStack(spacing:22) {
             if preview { Text("Пример карты · не результат измерения").font(.caption).foregroundStyle(.white.opacity(0.5)) }
-            SkyDomeView(survey:scan.survey,path:path,direction:nil).frame(height:330)
+            SkyDomeView(survey:scan.survey,path:path,direction:nil,
+                        viewingDirection:demoViewingDirection,
+                        startAzimuth:scan.startAzimuth,followsPhone:followsPhone,
+                        showPassPath:showPassPath,sensors:model.sensors).frame(height:310)
             HStack(spacing:18) {
                 legend("Неизвестно",color:Color(white:0.25)); legend("Открыто",color:.white); legend("Препятствия",color:Color(red:1,green:0.18,blue:0.25))
             }.font(.system(size:11))
-            Text("Вращайте карту пальцем · вверх и вниз — наклон").font(.caption).foregroundStyle(.white.opacity(0.4))
+            Picker("Режим обзора",selection:$followsPhone) {
+                Text("От точки старта").tag(false)
+                Text("Гироскоп").tag(true)
+            }.pickerStyle(.segmented).accessibilityIdentifier("skyViewMode")
+            Text(followsPhone ? "Поворачивайте iPhone на месте — карта следует за направлением задней камеры." : "Карта ориентирована по началу сканирования. Вращайте пальцем, чтобы осмотреть другие стороны.")
+                .font(.caption).foregroundStyle(.white.opacity(0.6)).frame(maxWidth:.infinity,alignment:.leading)
+            HStack {
+                Label(scanOriginLabel,systemImage:"location.north")
+                    .font(.caption).foregroundStyle(.white.opacity(0.65))
+                Spacer(minLength:8)
+                Button { showPassPath.toggle() } label: {
+                    Label("Путь спутника",systemImage:showPassPath ? "eye":"eye.slash")
+                        .font(.system(size:11,weight:.medium)).padding(.horizontal,12).padding(.vertical,10)
+                        .satelliteGlass(in:Capsule(),interactive:true)
+                }.buttonStyle(.plain).accessibilityIdentifier("toggleSkyPassPath")
+                    .accessibilityValue(showPassPath ? "Показан":"Скрыт")
+            }
+            if showPassPath {
+                Label("Жёлтая линия — прогноз пути выбранного спутника",systemImage:"point.topleft.down.to.point.bottomright.curvepath")
+                    .font(.caption).foregroundStyle(.yellow.opacity(0.85)).frame(maxWidth:.infinity,alignment:.leading)
+            }
             VStack(alignment:.leading,spacing:10) {
                 HStack(alignment:.top,spacing:12) {
                     Image(systemName:assessment.blocked > 0 ? "exclamationmark.circle":"viewfinder")
@@ -125,8 +171,7 @@ struct SiteScanView: View {
                 }
                 Text(pathMessage).font(.caption).foregroundStyle(.white.opacity(0.5))
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading)
-                .background(assessment.blocked > 0 ? Color.yellow.opacity(0.07):Color.white.opacity(0.04))
-                .overlay(Rectangle().stroke(assessment.blocked > 0 ? Color.yellow.opacity(0.5):Color.white.opacity(0.15),lineWidth:0.7))
+                .satelliteGlass(in:RoundedRectangle(cornerRadius:24,style:.continuous))
             HStack { Text("Просмотрено неба").foregroundStyle(.white.opacity(0.55)); Spacer(); Text("\(Int(scan.coverageFraction*100))%").monospacedDigit() }.font(.system(size:13))
             VStack(spacing:10) {
                 primary("Осмотреть камерой",id:"inspectSiteScan",inverted:false) { start(collecting:false) }
@@ -135,8 +180,9 @@ struct SiteScanView: View {
             Text("Карта относится к этой точке. После перемещения выполните новое сканирование.").font(.caption).foregroundStyle(.white.opacity(0.5)).frame(maxWidth:.infinity,alignment:.leading).accessibilityIdentifier("scanSnapshotNotice")
             if model.manualLocation { Text("Координаты в настройках должны совпадать с местом проверки.").font(.caption).foregroundStyle(.orange) }
             Text(scan.message).font(.caption).foregroundStyle(.white.opacity(0.45)).accessibilityIdentifier("scanStatus")
+            if let error = scan.torchError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading) }
             Divider().overlay(.white.opacity(0.12))
-            SiteWeatherView(observer:model.observer)
+            SiteWeatherView(observer:model.observer,service:model.weatherService)
             Text("Обзор неба не подтверждает радиосвязь. Для связи нужны антенна, внешний модуль и работающий ретранслятор.").font(.caption).foregroundStyle(.white.opacity(0.45)).frame(maxWidth:.infinity,alignment:.leading)
         }.padding(.horizontal,24).padding(.top,16).padding(.bottom,30)
     }
@@ -144,7 +190,7 @@ struct SiteScanView: View {
         GeometryReader { geometry in
             ZStack {
                 if scan.running { SkyScanCamera(controller:scan) }
-                else { LinearGradient(colors:[Color(red:0.12,green:0.23,blue:0.36),Color(red:0.02,green:0.06,blue:0.1)],startPoint:.top,endPoint:.bottom) }
+                else { LinearGradient(colors:[Color(white:0.12),Color(white:0.025)],startPoint:.top,endPoint:.bottom) }
                 Canvas { context,size in
                     for target in scan.projectedTargets {
                         if screen == .scanning && target.collected { continue }
@@ -173,14 +219,26 @@ struct SiteScanView: View {
     private var cameraControls: some View {
         VStack(spacing:0) {
             header
+            HStack {
+                Spacer()
+                Button { scan.toggleTorch() } label: {
+                    Image(systemName:scan.isTorchOn ? "flashlight.on.fill":"flashlight.off.fill")
+                        .font(.system(size:18)).frame(width:46,height:46)
+                        .satelliteGlass(in:Circle(),interactive:true)
+                }.buttonStyle(.plain).disabled(!scan.torchAvailable)
+                    .accessibilityLabel(scan.isTorchOn ? "Выключить фонарик":"Включить фонарик")
+                    .accessibilityValue(scan.torchAvailable ? (scan.isTorchOn ? "Включён":"Выключен"):"Недоступен")
+                    .accessibilityIdentifier("scanTorch")
+            }.padding(.horizontal,20).padding(.top,10)
             if preview { Text("Демонстрация · камера не используется").font(.caption2).padding(8).background(.black.opacity(0.4),in:Capsule()) }
             Spacer(minLength:20)
             VStack(spacing:8) {
+                if let error = scan.torchError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading) }
                 HStack(alignment:.bottom) { Text(scan.message).font(.caption).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("scanStatus"); Spacer(minLength:12); cameraCompass }
                 if screen == .scanning {
                     HStack(spacing:10) {
-                        Button { scan.mark(.clear) } label: { Label("Небо",systemImage:"checkmark").frame(maxWidth:.infinity).frame(height:44) }.background(.black.opacity(0.6)).accessibilityIdentifier("markSkyClear")
-                        Button { scan.mark(.blocked) } label: { Label("Препятствие",systemImage:"xmark").frame(maxWidth:.infinity).frame(height:44) }.background(.black.opacity(0.6)).accessibilityIdentifier("markSkyBlocked")
+                        Button { scan.mark(.clear) } label: { Label("Небо",systemImage:"checkmark").frame(maxWidth:.infinity).frame(height:44).satelliteGlass(in:Capsule(),interactive:true) }.accessibilityIdentifier("markSkyClear")
+                        Button { scan.mark(.blocked) } label: { Label("Препятствие",systemImage:"xmark").frame(maxWidth:.infinity).frame(height:44).satelliteGlass(in:Capsule(),interactive:true) }.accessibilityIdentifier("markSkyBlocked")
                     }.font(.system(size:13,weight:.medium)).disabled(scan.direction == nil || !scan.running)
                 }
                 primary(screen == .inspecting ? "К карте":"Показать результат",id:"finishSiteScan") { captureTask?.cancel(); scan.finish(); screen = .result }
@@ -222,7 +280,9 @@ struct SiteScanView: View {
     private func primary(_ title: String,id: String,inverted: Bool = true,action: @escaping () -> Void) -> some View {
         Button(action:action) {
             HStack { if starting { ProgressView().tint(inverted ? .black:.white) }; Text(title).font(.system(size:15,weight:.semibold)) }
-                .frame(maxWidth:.infinity).frame(height:52).foregroundStyle(inverted ? .black:.white).background(inverted ? Color.white:Color(white:0.1))
+                .frame(maxWidth:.infinity).frame(height:52).foregroundStyle(inverted ? .black:.white)
+                .background(inverted ? Color.white:Color.clear,in:RoundedRectangle(cornerRadius:22,style:.continuous))
+                .satelliteGlass(in:RoundedRectangle(cornerRadius:22,style:.continuous),interactive:true)
         }.buttonStyle(.plain).disabled(starting).accessibilityIdentifier(id)
     }
     private func legend(_ title: String,color: Color) -> some View { HStack(spacing:5) { Circle().fill(color).frame(width:7,height:7); Text(title) } }
@@ -244,16 +304,21 @@ struct SiteScanView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment:.leading,spacing:18) {
-                    Text("Процент — просмотренная площадь неба. Собранная точка ещё не означает, что в этом направлении нет препятствий.")
+                    VStack(alignment:.leading,spacing:10) {
+                        Label("Что означает процент",systemImage:"viewfinder").font(.headline).foregroundStyle(.white)
+                        Text("Процент — просмотренная площадь неба. Собранная точка ещё не означает, что в этом направлении нет препятствий.")
+                    }.padding(20).frame(maxWidth:.infinity,alignment:.leading)
+                        .satelliteGlass(in:RoundedRectangle(cornerRadius:24,style:.continuous))
                     Text("Небо, дальние здания и деревья отмечаются по камере вручную. LiDAR отмечает близкие поверхности до 6 м; отсутствие глубины не означает открытое небо.")
-                    Text("Белые точки — открытое небо, красные — препятствия. Тёмные и серые точки требуют проверки. Жёлтая линия — путь выбранного спутника.")
-                    Text("В режиме осмотра поворачивайте телефон на том же месте. Отметки показаны в своих направлениях, карта при этом не дополняется.")
+                    Text("Белые точки — открытое небо, красные — препятствия. Тёмные и серые точки требуют проверки. Путь выбранного спутника можно включить отдельно: он показан жёлтой линией.")
+                    Text("«От точки старта» возвращает карту к направлению начала сканирования. В режиме «Гироскоп» поворачивайте телефон на том же месте: задняя камера задаёт направление обзора. Эти режимы не добавляют новые измерения.")
+                    Text("Мягкий отклик отмечает сбор новых точек. Фонарик освещает близкие предметы; дальние препятствия в темноте могут оставаться неразличимыми.")
                     Text("Карта относится к одной точке. После перемещения начните новое сканирование. Стены и потолок следует отмечать как препятствия.")
                     Text("Кадры камеры обрабатываются на iPhone, не записываются и не отправляются. Карта хранится до закрытия проверки места. Компас и плохое освещение могут ограничивать точность.")
-                }.font(.subheadline).foregroundStyle(.secondary).padding(24)
-            }.navigationTitle("Проверка места").navigationBarTitleDisplayMode(.inline)
+                }.font(.subheadline).foregroundStyle(.white.opacity(0.72)).padding(24)
+            }.background(Color.black).navigationTitle("Проверка места").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { information = false } } }
-        }.preferredColorScheme(.dark)
+        }.tint(.white).preferredColorScheme(.dark)
     }
     private func loadPath() async {
         path = []

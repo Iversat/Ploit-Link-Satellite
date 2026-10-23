@@ -66,7 +66,7 @@ struct SiteWeather: Equatable {
     }
 }
 
-struct SiteWeatherForecast: Equatable {
+struct SiteWeatherForecast: Codable, Equatable {
     let sampledAt: Date
     let interval: TimeInterval
     let temperatureC: Double?
@@ -155,52 +155,126 @@ enum SiteWeatherAPI {
 }
 
 @MainActor final class SiteWeatherService: ObservableObject {
+    struct CacheEntry: Codable {
+        let location: Observer
+        let forecast: SiteWeatherForecast
+        let fetchedAt: Date
+        func isFresh(at date: Date) -> Bool {
+            let age = date.timeIntervalSince(fetchedAt)
+            // A stale provider sample remains labelled stale, without polling it every tick.
+            return age >= 0 && age < 900
+        }
+    }
+    typealias Loader = (URLRequest) async throws -> (Data, URLResponse)
     @Published private(set) var weather: SiteWeather?
     @Published private(set) var forecast: SiteWeatherForecast?
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var fetchedAt: Date?
     private var task: Task<Void, Never>?
     private var requestID = UUID()
-    private let session: URLSession
+    private let loader: Loader
+    private let now: () -> Date
+    private let cacheURL: URL?
+    private var cache: [String: CacheEntry] = [:]
+    private var activeLocation: Observer?
+    private var lastAttempt: Date?
+    private var failures: [String: Date] = [:]
+    private var networkAvailable = true
 
-    init(session: URLSession? = nil) {
-        if let session { self.session = session }
-        else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.timeoutIntervalForRequest = 15
-            configuration.timeoutIntervalForResource = 20
-            configuration.waitsForConnectivity = false
-            self.session = URLSession(configuration: configuration)
+    init(session: URLSession? = nil, cacheURL: URL? = nil, persistsCache: Bool = true,
+         now: @escaping () -> Date = Date.init, loader: Loader? = nil) {
+        self.now = now
+        self.cacheURL = persistsCache ? (cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Weather/current.json")) : nil
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 20
+        configuration.waitsForConnectivity = false
+        let session = session ?? URLSession(configuration: configuration)
+        self.loader = loader ?? { try await session.data(for: $0) }
+        if let cacheURL = self.cacheURL, let data = try? Data(contentsOf: cacheURL), data.count <= 100_000,
+           let entries = try? JSONDecoder().decode([CacheEntry].self, from: data) {
+            for entry in entries.prefix(8) where SiteWeatherAPI.location(for: entry.location) == entry.location && entry.forecast.sampledAt.timeIntervalSince1970 > 0 {
+                cache[Self.key(entry.location)] = entry
+            }
         }
     }
 
     deinit { task?.cancel() }
 
-    func load(observer: Observer) {
+    private static func key(_ location: Observer) -> String {
+        "\(location.latitude)/\(location.longitude)"
+    }
+
+    func useLocation(_ observer: Observer?) {
+        let location = SiteWeatherAPI.location(for: observer)
+        guard location != activeLocation else { return }
         cancel()
-        guard let url = try? SiteWeatherAPI.requestURL(observer: observer) else {
+        activeLocation = location
+        let entry = location.flatMap { cache[Self.key($0)] }
+        forecast = entry?.forecast; fetchedAt = entry?.fetchedAt
+        weather = nil; errorMessage = nil
+    }
+
+    func load(observer: Observer) {
+        refreshIfNeeded(observer: observer, networkAvailable: networkAvailable, force: true)
+    }
+
+    func refreshIfNeeded(observer: Observer?, networkAvailable: Bool, force: Bool = false) {
+        if !self.networkAvailable && networkAvailable { errorMessage = nil }
+        self.networkAvailable = networkAvailable
+        useLocation(observer)
+        guard let location = activeLocation else {
+            if force { errorMessage = "Для погоды нужны корректные координаты." }
+            return
+        }
+        guard networkAvailable else {
+            if isLoading { cancel() }
+            let message = forecast == nil ? "Нет интернета. Условия можно указать вручную." : "Нет интернета. Показаны сохранённые данные."
+            if errorMessage != message { errorMessage = message }
+            return
+        }
+        guard !isLoading else { return }
+        let date = now(), key = Self.key(location)
+        if !force, cache[key]?.isFresh(at: date) == true { return }
+        if let lastAttempt {
+            let elapsed = date.timeIntervalSince(lastAttempt)
+            if elapsed >= 0 && elapsed < (force ? 30 : 60) { return }
+        }
+        if !force, let failed = failures[key] {
+            let elapsed = date.timeIntervalSince(failed)
+            if elapsed >= 0 && elapsed < 300 { return }
+        }
+        guard let url = try? SiteWeatherAPI.requestURL(observer: location) else {
             errorMessage = "Для погоды нужны корректные координаты."
             return
         }
         let id = UUID(); requestID = id
+        lastAttempt = date
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         isLoading = true; errorMessage = nil
-        let session = session
+        let loader = loader
         task = Task { [weak self] in
             do {
                 try Task.checkCancellation()
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await loader(request)
                 try Task.checkCancellation()
                 guard let response = response as? HTTPURLResponse, response.statusCode == 200,
                       data.count <= 100_000 else { throw SiteWeatherError.unavailable }
                 let forecast = try SiteWeatherAPI.decode(data)
                 guard let self, self.requestID == id else { return }
-                self.forecast = forecast
+                let entry = CacheEntry(location: location, forecast: forecast, fetchedAt: self.now())
+                self.cache[key] = entry
+                self.forecast = forecast; self.fetchedAt = entry.fetchedAt
+                self.failures[key] = nil
+                self.saveCache()
                 self.isLoading = false; self.task = nil
             } catch {
                 guard !Task.isCancelled, let self, self.requestID == id else { return }
-                self.errorMessage = "Погода недоступна. Проверьте интернет и повторите загрузку."
+                self.failures[key] = self.now()
+                self.errorMessage = self.forecast == nil ? "Погода недоступна. Повторная проверка — через несколько минут." : "Не удалось обновить погоду. Показаны сохранённые данные."
                 self.isLoading = false; self.task = nil
             }
         }
@@ -211,17 +285,29 @@ enum SiteWeatherAPI {
         task?.cancel(); task = nil; isLoading = false
     }
 
+    private func saveCache() {
+        let entries = Array(cache.values.sorted { $0.fetchedAt > $1.fetchedAt }.prefix(8))
+        cache = Dictionary(uniqueKeysWithValues: entries.map { (Self.key($0.location), $0) })
+        guard let cacheURL, let data = try? JSONEncoder().encode(entries) else { return }
+        try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: cacheURL, options: .atomic)
+    }
+
     func record(sky: SiteSkyCondition, wind: SiteWindCondition, temperatureC: Double?, at date: Date = Date()) {
         let temperature = temperatureC.flatMap { $0.isFinite && (-90...60).contains($0) ? $0 : nil }
         guard sky != .unknown || wind != .unknown || temperature != nil else { return }
         weather = SiteWeather(sampledAt: date, sky: sky, wind: wind, temperatureC: temperature)
     }
-    func clear() { cancel(); weather = nil; forecast = nil; errorMessage = nil }
+    func clear() {
+        cancel(); weather = nil; forecast = nil; fetchedAt = nil; errorMessage = nil
+        activeLocation = nil; cache = [:]; failures = [:]; lastAttempt = nil
+        if let cacheURL { try? FileManager.default.removeItem(at: cacheURL) }
+    }
 }
 
 struct SiteWeatherView: View {
     let observer: Observer?
-    @StateObject private var service = SiteWeatherService()
+    @ObservedObject var service: SiteWeatherService
     @State private var sky: SiteSkyCondition = .unknown
     @State private var wind: SiteWindCondition = .unknown
     @State private var temperature = ""
@@ -300,8 +386,8 @@ struct SiteWeatherView: View {
         .padding(.top, 10)
             }
         }
-        .onChange(of: locationKey) { _, _ in service.clear() }
-        .onDisappear { service.cancel() }
+        .onAppear { service.useLocation(observer) }
+        .onChange(of: locationKey) { _, _ in service.useLocation(observer) }
     }
 
     // Discard a local observation when moving to a different weather area.
@@ -312,7 +398,7 @@ struct SiteWeatherView: View {
 
     private var onlineWeather: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("По кнопке «Загрузить погоду» округлённые до 0,01° координаты передаются Open-Meteo. Сервис также видит IP-адрес.")
+            Text("Погода обновляется автоматически при открытии приложения и появлении сети. Open-Meteo получает координаты, округлённые до 0,01°, и IP-адрес.")
                 .font(.caption).foregroundStyle(.secondary)
             if service.isLoading {
                 HStack {
@@ -325,9 +411,10 @@ struct SiteWeatherView: View {
                 Button {
                     if let location = SiteWeatherAPI.location(for: observer) { service.load(observer: location) }
                 } label: {
-                    Label("Загрузить погоду", systemImage: "arrow.down.circle")
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
-                }.buttonStyle(.bordered).disabled(SiteWeatherAPI.location(for: observer) == nil)
+                    Label(service.forecast == nil ? "Загрузить погоду" : "Обновить погоду", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .satelliteGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous), interactive: true)
+                }.buttonStyle(.plain).disabled(SiteWeatherAPI.location(for: observer) == nil)
                     .accessibilityIdentifier("loadSiteWeather")
             }
             if SiteWeatherAPI.location(for: observer) == nil {

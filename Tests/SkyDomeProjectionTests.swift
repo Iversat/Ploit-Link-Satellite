@@ -80,4 +80,72 @@ final class SkyDomeProjectionTests: XCTestCase {
         XCTAssertTrue(projection.isVisible(segment.1))
         XCTAssertNil(SkyDomeProjection.vector(.init(azimuth:.nan,elevation:30)))
     }
+
+    func testRecordedInitialBearingFacesVisibleSideAndResetRestoresIt() {
+        for start in [0.0,90,180,270,359] {
+            let original = SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil)
+            let projection = SkyDomeProjection(yaw:original.yaw,pitch:original.pitch)
+            XCTAssertTrue(projection.isVisible(vector(start,5)),"Recorded bearing must not be on the hidden half.")
+            XCTAssertFalse(projection.isVisible(vector(start+180,5)))
+            XCTAssertEqual(projection.projected(vector(start,5)).x,0,accuracy:1e-12)
+            let dragged = SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil,yawOffset:65,pitchOffset:18)
+            XCTAssertNotEqual(dragged,original)
+            XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil,yawOffset:0,pitchOffset:0),original)
+        }
+        let south = SkyDomeOrientation.resolve(startAzimuth:180,viewingDirection:nil)
+        XCTAssertEqual(south.yaw,0,accuracy:1e-12)
+        XCTAssertEqual(south.pitch,32,accuracy:1e-12)
+    }
+
+    func testLiveInspectionUsesRearGlassEvenWhenPointingPreferenceIsTop() throws {
+        let basis = AimMath.pose(azimuth:220,elevation:40,aiming:.back)
+        let rear = try XCTUnwrap(SkyDomeOrientation.liveDirection(basis:basis,motionReady:true,northIsTrue:true,headingAccuracy:5))
+        XCTAssertEqual(rear.azimuth,220,accuracy:1e-10)
+        XCTAssertEqual(rear.elevation,40,accuracy:1e-10)
+        let top = AimMath.direction(axis:.top,basis:basis)
+        XCTAssertGreaterThan(AimMath.separation(az1:rear.azimuth,el1:rear.elevation,az2:top.az,el2:top.el),89)
+
+        let live = SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:rear)
+        XCTAssertEqual(live.yaw,-40,accuracy:1e-10)
+        XCTAssertEqual(live.pitch,40,accuracy:1e-10)
+        let projection = SkyDomeProjection(yaw:live.yaw,pitch:live.pitch)
+        XCTAssertTrue(projection.isVisible(vector(220,10)))
+        XCTAssertFalse(projection.isVisible(vector(40,10)))
+    }
+
+    func testUnreliableMotionCannotReorientSavedMap() {
+        let basis = AimMath.pose(azimuth:220,elevation:40,aiming:.back)
+        XCTAssertNil(SkyDomeOrientation.liveDirection(basis:nil,motionReady:true,northIsTrue:true,headingAccuracy:5))
+        XCTAssertNil(SkyDomeOrientation.liveDirection(basis:basis,motionReady:false,northIsTrue:true,headingAccuracy:5))
+        XCTAssertNil(SkyDomeOrientation.liveDirection(basis:basis,motionReady:true,northIsTrue:false,headingAccuracy:5))
+        for accuracy in [-1.0,21,.nan,.infinity] {
+            XCTAssertNil(SkyDomeOrientation.liveDirection(basis:basis,motionReady:true,northIsTrue:true,headingAccuracy:accuracy))
+        }
+        let original = SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:nil)
+        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:.nan,elevation:30)),original)
+        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:100)),original)
+        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:.nan,viewingDirection:nil).yaw,0)
+        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:-30)).pitch,15)
+        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:90)).pitch,75)
+    }
+
+    func testCachedTrackRetainsDirectionsAndRejectsInvalidOrAntipodalSpans() throws {
+        let first = SkyDirection(azimuth:170,elevation:20)
+        let last = SkyDirection(azimuth:170,elevation:40)
+        let segments = SkyDomeTrackSegment.make(path:[first,last])
+        XCTAssertGreaterThan(segments.count,1)
+        XCTAssertEqual(try XCTUnwrap(segments.first).from,vector(170,20))
+        let end = try XCTUnwrap(segments.last).to
+        XCTAssertEqual(end.x,vector(170,40).x,accuracy:1e-12)
+        XCTAssertEqual(end.y,vector(170,40).y,accuracy:1e-12)
+        XCTAssertEqual(end.z,vector(170,40).z,accuracy:1e-12)
+        for segment in segments {
+            XCTAssertEqual(segment.from.dot(segment.from),1,accuracy:1e-12)
+            XCTAssertEqual(segment.to.dot(segment.to),1,accuracy:1e-12)
+        }
+        for (a,b) in zip(segments,segments.dropFirst()) { XCTAssertEqual(a.to,b.from) }
+        XCTAssertTrue(SkyDomeTrackSegment.make(path:[.init(azimuth:0,elevation:0),.init(azimuth:180,elevation:0)]).isEmpty)
+        XCTAssertTrue(SkyDomeTrackSegment.make(path:[.init(azimuth:.nan,elevation:0),last]).isEmpty)
+        XCTAssertTrue(SkyDomeTrackSegment.make(path:[first]).isEmpty)
+    }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 import ARKit
 import AVFoundation
+import UIKit
 
 enum SkyScanLocation {
     static func changed(from previous: Observer?, to current: Observer?) -> Bool {
@@ -18,6 +19,45 @@ enum SkyScanLocation {
     }
 }
 
+@MainActor protocol SkyScanTorchControlling: AnyObject {
+    var available: Bool { get }
+    var isOn: Bool { get }
+    func setOn(_ enabled: Bool, completion: @escaping @MainActor (Bool,String?) -> Void)
+}
+
+@MainActor private final class SystemSkyScanTorch: SkyScanTorchControlling {
+    private let device: AVCaptureDevice? = {
+        if let camera = ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera, camera.hasTorch { return camera }
+        return AVCaptureDevice.default(.builtInWideAngleCamera,for:.video,position:.back)
+    }()
+    private let queue = DispatchQueue(label:"ru.ploit.sky-scan.torch",qos:.userInitiated)
+    var available: Bool { device?.hasTorch == true && device?.isTorchAvailable == true }
+    var isOn: Bool { device?.torchMode == .on }
+    func setOn(_ enabled: Bool, completion: @escaping @MainActor (Bool,String?) -> Void) {
+        guard let device, device.hasTorch else { completion(false,enabled ? "Фонарик недоступен на этом устройстве.":nil); return }
+        // Serial commands keep a pending ON before the final OFF. Configuration
+        // locks stay off the UI thread; stopping never leaves a queued ON last.
+        queue.async {
+            var failure: String?
+            do {
+                if enabled || device.torchMode != .off {
+                    try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
+                    if enabled {
+                        if device.isTorchAvailable && device.isTorchModeSupported(.on) {
+                            try device.setTorchModeOn(level:0.25)
+                        } else { failure = "Фонарик сейчас недоступен. Дайте iPhone остыть и попробуйте снова." }
+                    } else if device.isTorchModeSupported(.off) { device.torchMode = .off }
+                }
+            } catch {
+                failure = enabled ? "Не удалось включить фонарик. Попробуйте снова.":"Не удалось выключить фонарик. Выключите его через Пункт управления."
+            }
+            let active = device.torchMode == .on, reportedFailure = failure
+            DispatchQueue.main.async { completion(active,reportedFailure) }
+        }
+    }
+}
+
 @MainActor final class SkyScanController: NSObject, ObservableObject, @preconcurrency ARSessionDelegate {
     @Published private(set) var survey = SkySurvey()
     @Published private(set) var direction: SkyDirection?
@@ -28,6 +68,10 @@ enum SkyScanLocation {
     @Published private(set) var collecting = false
     @Published private(set) var projectedTargets: [SkyScanTarget] = []
     @Published private(set) var coverageFraction = 0.0
+    @Published private(set) var startAzimuth: Double?
+    @Published private(set) var torchAvailable = false
+    @Published private(set) var isTorchOn = false
+    @Published private(set) var torchError: String?
     var coveredTargetCount: Int { survey.coveredCellCount }
     let totalTargetCount = SkySurvey.columns * SkySurvey.rows
     var headingReady = false
@@ -41,14 +85,22 @@ enum SkyScanLocation {
     private var scanObserver: Observer?
     private var startToken = UUID()
     private var isPreview = false
+    private let torch: SkyScanTorchControlling
+    private var torchRequestID = UUID()
+    private var torchChanging = false
+    private var lastTorchRefresh: TimeInterval = 0
+    private var feedback = SkyScanCollectionFeedback()
+    private var collectionHaptic: UIImpactFeedbackGenerator?
 
-    override init() {
+    init(torch: SkyScanTorchControlling? = nil) {
+        self.torch = torch ?? SystemSkyScanTorch()
         super.init()
         session.delegate = self
         session.delegateQueue = .main
     }
     func start(observer: Observer?, collecting: Bool = true) async {
         let token = UUID(); startToken = token
+        torchError = nil
         if !collecting {
             guard survey.hasRecordedData else { message = "Сначала соберите карту обзора неба."; return }
             guard !SkyScanLocation.changed(from:scanObserver,to:observer) else {
@@ -76,27 +128,32 @@ enum SkyScanLocation {
         isPreview = false
         if collecting {
             survey = SkySurvey(); coverageFraction = 0; origin = nil; moved = false
-            scanObserver = observer; isSnapshot = false
+            scanObserver = observer; isSnapshot = false; startAzimuth = nil
         }
-        direction = nil; lastSample = 0; lastProjection = 0; projectedTargets = []; dwell.reset()
+        feedback.reset()
+        collectionHaptic = collecting ? UIImpactFeedbackGenerator(style:.soft):nil
+        collectionHaptic?.prepare()
+        direction = nil; lastTorchRefresh = 0; lastSample = 0; lastProjection = 0; projectedTargets = []; dwell.reset()
         self.collecting = collecting
         // Inspection resumes the same AR world, retaining the original antenna
         // position. It neither resets the map nor silently collects new coverage.
         session.run(configuration, options:collecting ? [.resetTracking,.removeExistingAnchors]:[])
         running = true
+        requestTorch(false)
         message = collecting ? "Медленно обведите небо камерой: точки собираются после короткой остановки."
             : "Осмотр сохранённой карты. Оставайтесь в исходной точке: после паузы камера уточняет привязку."
     }
     func stop() {
-        startToken = UUID(); session.pause(); running = false; direction = nil; collecting = false
-        projectedTargets = []; dwell.reset()
+        startToken = UUID(); running = false; direction = nil; collecting = false
+        requestTorch(false); session.pause()
+        projectedTargets = []; dwell.reset(); feedback.reset(); collectionHaptic = nil
     }
     func finish() {
         stop(); isSnapshot = true
         message = "Сохранён снимок точки сканирования. После перемещения выполните проверку заново."
     }
     func invalidate(_ reason: String) {
-        stop(); survey = SkySurvey(); coverageFraction = 0; isSnapshot = false; scanObserver = nil; origin = nil; message = reason
+        stop(); survey = SkySurvey(); coverageFraction = 0; startAzimuth = nil; isSnapshot = false; scanObserver = nil; origin = nil; message = reason
     }
     func checkLocation(_ observer: Observer?) {
         guard !isPreview else { return }
@@ -107,10 +164,34 @@ enum SkyScanLocation {
         guard running, collecting, !moved, let direction, headingReady || isPreview else { return }
         survey.mark(direction,state:state)
     }
+    func toggleTorch() {
+        guard running, !isPreview, !torchChanging, torch.available || torch.isOn else { return }
+        torchError = nil
+        requestTorch(!isTorchOn)
+    }
+    private func requestTorch(_ enabled: Bool) {
+        let request = UUID(); torchRequestID = request; torchChanging = true
+        torchAvailable = running && !isPreview && (torch.available || torch.isOn)
+        torch.setOn(enabled) { [weak self] active,failure in
+            guard let self, self.torchRequestID == request else { return }
+            self.torchChanging = false
+            self.isTorchOn = active
+            self.torchAvailable = self.running && !self.isPreview && (self.torch.available || active)
+            if let failure { self.torchError = failure; self.message = failure }
+        }
+    }
+    private func refreshTorchState() {
+        guard !torchChanging else { return }
+        torchAvailable = running && !isPreview && (torch.available || torch.isOn)
+        isTorchOn = torch.isOn
+    }
     func setViewport(_ size: CGSize) { viewportSize = size }
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard running, frame.timestamp - lastProjection >= 1.0/35 else { return }
         lastProjection = frame.timestamp
+        if frame.timestamp-lastTorchRefresh >= 0.2 {
+            lastTorchRefresh = frame.timestamp; refreshTorchState()
+        }
         guard case .normal = frame.camera.trackingState else {
             direction = nil; projectedTargets = []; dwell.reset()
             message = "Медленно поверните телефон: камера уточняет положение."; return
@@ -127,6 +208,10 @@ enum SkyScanLocation {
         }
         let forward = -SIMD3<Float>(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
         direction = Self.skyDirection(forward)
+        if startAzimuth == nil {
+            startAzimuth = SkyScanInitialHeading.capture(current:nil,direction:direction,collecting:collecting,
+                                                        trackingReady:true,headingReady:headingReady)
+        }
         let sampleDue = frame.timestamp - lastSample >= 0.2
         if sampleDue {
             lastSample = frame.timestamp
@@ -142,7 +227,7 @@ enum SkyScanLocation {
                 imageSize:frame.camera.imageResolution,
                 imageToViewport:frame.displayTransform(for:.portrait,viewportSize:viewportSize))
             visible = result.cells.indices.compactMap { index in
-                projection.project(SkySurvey.direction(at:index)).map { (index,$0) }
+                projection.project(world:SkyScanProjection.targetDirections[index]).map { (index,$0) }
             }
         }
         let candidates = Set(visible.compactMap { index,point -> Int? in
@@ -152,6 +237,10 @@ enum SkyScanLocation {
         let progress = dwell.update(ids:candidates,at:frame.timestamp,enabled:collecting)
         let newlyCollected = Set(progress.filter { $0.value >= 1 }.map(\.key))
         if collecting { result.collect(newlyCollected) }
+        if feedback.shouldPulse(newCount:newlyCollected.count,at:frame.timestamp,collecting:collecting,preview:isPreview) {
+            collectionHaptic?.impactOccurred(intensity:0.45)
+            collectionHaptic?.prepare()
+        }
         if let direction, direction.elevation < 0 {
             self.direction = nil
             if sampleDue { message = "Поднимите камеру выше горизонта." }
@@ -207,7 +296,7 @@ enum SkyScanLocation {
         stop()
         isPreview = true; headingReady = true
         if collecting || !survey.hasRecordedData {
-            survey = SkySurvey()
+            survey = SkySurvey(); startAzimuth = 135
             for index in survey.cells.indices {
                 let direction = SkySurvey.direction(at:index)
                 if direction.elevation > 25 { survey.mark(direction,state:.clear) }
@@ -219,9 +308,11 @@ enum SkyScanLocation {
         isSnapshot = true; self.collecting = capture && collecting
         if capture {
             direction = .init(azimuth:135,elevation:45)
-            projectedTargets = (0..<20).map { index in
-                let cell = 2*SkySurvey.columns+index
-                return SkyScanTarget(id:cell,x:0.12+Double(index % 5)*0.19,y:0.15+Double(index / 5)*0.20,
+            projectedTargets = (0..<60).map { index in
+                let column = (index % 10)*SkySurvey.columns/10
+                let row = SkySurvey.rows/3 + index/10
+                let cell = row*SkySurvey.columns+column
+                return SkyScanTarget(id:cell,x:0.07+Double(index % 10)*0.095,y:0.10+Double(index / 10)*0.145,
                     state:survey.cells[cell],collected:survey.collectedCells.contains(cell),dwellFraction:index == 8 ? 0.65:0)
             }
         }
