@@ -164,4 +164,20 @@ final class OrbitRenderingTests: XCTestCase {
         XCTAssertNotNil(playback.states[tle.norad]); XCTAssertTrue(playback.active)
         playback.stop()
     }
+    @MainActor func testModelOwnedPulseAdvancesAndStopsWithPlaybackLifecycle() async throws {
+        let playback=OrbitPlayback(),start=Date(timeIntervalSince1970:1000)
+        for _ in 0..<2 {
+            playback.configure(elements:[:],selectedID:25544,initialDate:start)
+            playback.speed=300; playback.togglePlayback()
+            for _ in 0..<60 {
+                if playback.date.timeIntervalSince(start)>1 { break }
+                try await Task.sleep(nanoseconds:50_000_000)
+            }
+            XCTAssertGreaterThan(playback.date.timeIntervalSince(start),1,"Time must advance without a view-owned timer")
+            playback.stop()
+            let stopped=playback.date
+            try await Task.sleep(nanoseconds:700_000_000)
+            XCTAssertEqual(playback.date,stopped,"Closing must cancel the periodic publisher before reopening")
+        }
+    }
 }

@@ -44,11 +44,11 @@ jobs:
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
           DATA=$(xcrun simctl get_app_container "$DEVICE" ru.ploit.satellite data)
           mkdir -p build/screenshots
-          for SCENE in home-night radar-top-aligned orbits-day orbits-night orbits-zoomed; do
+          for SCENE in home-night home-evening home-day site-scan radar-top-aligned orbits-day orbits-night orbits-zoomed; do
             xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
             rm -f "$DATA/Library/Caches/earth-textures-ready"
             xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
-            case "$SCENE" in home-night|orbits-*)
+            case "$SCENE" in home-*|orbits-*)
               for ATTEMPT in {1..60}; do
                 [ -f "$DATA/Library/Caches/earth-textures-ready" ] && break
                 sleep 1

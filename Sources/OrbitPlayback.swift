@@ -23,6 +23,7 @@ import Combine
     private let engine=OrbitEngine()
     private var calculation: Task<Void,Never>?
     private var scrubTask: Task<Void,Never>?
+    private var pulseTask: Task<Void,Never>?
     private var requestID=UUID()
     var offset: Double { date.timeIntervalSince(anchor) }
     var visibleIDs: [Int] { showAll ? elements.keys.sorted() : [selectedID] }
@@ -44,10 +45,20 @@ import Combine
         if value { cancelCalculation() } else { calculate() }
     }
     func configure(elements: [Int:Elements], selectedID: Int, initialDate: Date?) {
+        pulseTask?.cancel()
         cancelCalculation(); active=true; interacting=false; playing=false
         self.selectedID=selectedID; anchor=Date(); live=initialDate == nil
         self.elements=elements; tracks=[:]; states=[:]; paths=[:]; pathDates=[:]; focus+=1
         reanchor(at:initialDate ?? anchor); calculate()
+        // The presentation's model owns this clock source. Parent view updates
+        // must never reconnect a half-second timer and postpone its first tick.
+        pulseTask=Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds:500_000_000) } catch { return }
+                guard let self,!Task.isCancelled,self.active else { return }
+                self.pulse()
+            }
+        }
     }
     func updateElements(_ values: [Int:Elements]) {
         guard active,values != elements else { return }
@@ -117,7 +128,8 @@ import Combine
         }
     }
     func stop() {
-        active=false; cancelCalculation(); renderFeed.stop(); playing=false
+        active=false; pulseTask?.cancel(); pulseTask=nil
+        cancelCalculation(); renderFeed.stop(); playing=false
     }
 }
 
@@ -136,7 +148,6 @@ struct OrbitExplorerView: View {
     @State private var closing=false
     var initialDate: Date? = nil
     var initialSatelliteID: Int? = nil
-    private let timer=Timer.publish(every:0.5,on:.main,in:.common).autoconnect()
     private var satellite: Satellite? { model.satellites.first{$0.id==playback.selectedID} }
     private var session: PassWindow? { model.session(for:playback.selectedID,at:playback.date) }
     private var labels: [Int:String] {
@@ -204,7 +215,6 @@ struct OrbitExplorerView: View {
         }
         .onChange(of:model.fleetElements) { _,values in playback.updateElements(values) }
         .onChange(of:playback.showAll) { _,_ in playback.calculate() }
-        .onReceive(timer) { _ in if isPresented && scenePhase == .active { playback.pulse() } }
         .onChange(of:scenePhase) { _,phase in playback.setInteracting(phase != .active) }
         .onDisappear { playback.stop() }
         .preferredColorScheme(.dark)

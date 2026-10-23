@@ -16,7 +16,6 @@ struct SiteScanView: View {
     @State private var pathMessage = "Рассчитываем путь пролёта…"
     @State private var captureTask: Task<Void,Never>?
     @State private var engine = OrbitEngine()
-    private let clock = Timer.publish(every:0.5,on:.main,in:.common).autoconnect()
     private var pass: PassWindow? { model.session(for:model.selectedID) }
     private var assessment: SkyAssessment { scan.survey.assessment(path:path) }
     private var pathKey: String {
@@ -85,9 +84,12 @@ struct SiteScanView: View {
                 if preview { scan.preview() }
                 #endif
             }
-            .onReceive(clock) { _ in
-                scan.checkLocation(model.observer)
-                scan.headingReady = model.sensors.northIsTrue && model.sensors.headingAccuracy >= 0 && model.sensors.headingAccuracy <= 20
+            .task {
+                while !Task.isCancelled {
+                    scan.checkLocation(model.observer)
+                    scan.headingReady = model.sensors.northIsTrue && model.sensors.headingAccuracy >= 0 && model.sensors.headingAccuracy <= 20
+                    do { try await Task.sleep(nanoseconds:500_000_000) } catch { return }
+                }
             }
             .onChange(of:phase) { _, value in
                 if value == .background {

@@ -38,6 +38,15 @@ def main():
         "day_surface_is_visible": report["orbits-day"]["mean_brightness"] > 25,
         "night_is_darker_than_day": report["orbits-night"]["mean_brightness"] < report["orbits-day"]["mean_brightness"] * .8,
     }
+    if (args.screenshots / "home-evening.png").exists() and (args.screenshots / "home-day.png").exists():
+        # Compare the same unobscured surface above the cards, excluding UI glass.
+        for name in ["home-evening", "home-day"]:
+            with Image.open(args.screenshots / (name + ".png")) as image:
+                width, height = image.size
+                surface = image.convert("RGB").crop((int(width*.25), int(height*.30), int(width*.75), int(height*.36)))
+                values = list(surface.getdata())
+                report[name] = {"surface_brightness": sum(sum(p)/3 for p in values)/len(values)}
+        checks["home_evening_darker_than_noon"] = report["home-evening"]["surface_brightness"] < report["home-day"]["surface_brightness"] * .8
     result = {"measurements": report, "checks": checks, "passed": all(checks.values())}
     if args.output:
         args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
