@@ -2,6 +2,9 @@ import SwiftUI
 import SceneKit
 
 struct EarthView: UIViewRepresentable {
+    // Projection of the observer after the fixed geographic framing below.
+    static let observerScreenY = 0.5 - (sin(50 * Double.pi/180) - 0.60)
+        / (2.3 - cos(50 * Double.pi/180)) / tan(22.5 * Double.pi/180) / 2
     var active=true
     var latitude: Double = 35
     var longitude: Double = 35

@@ -31,15 +31,19 @@ struct SessionRecommendation {
         let duration=isCurrent ? "Ещё \(SessionText.countdown(window.setDate.timeIntervalSince(date)))" : "Через \(SessionText.countdown(window.riseDate.timeIntervalSince(date)))"
         return "\(duration) · \(SessionText.interval(window)) · выше \(Int(minimumElevation))°"
     }
+    static func preferredRelayMode(in satellite: Satellite, preferredID: String? = nil) -> RadioMode? {
+        let eligible=satellite.modes.filter { mode in
+            mode.canRelay && (mode.uplinkMHz.map{$0.isFinite && $0>0} ?? false) && (mode.downlinkMHz.map{$0.isFinite && $0>0} ?? false)
+        }
+        return eligible.first(where:{$0.id == preferredID}) ?? eligible.first
+    }
     static func best(satellites: [Satellite], windows: [Int:[PassWindow]], contexts: [Int:SessionPredictionContext],
                      elements: [Int:Elements], observer: Observer?, minimumElevation: Double,
                      date: Date, preferredID: Int? = nil) -> SessionRecommendation? {
         guard let observer, observer.latitude.isFinite, observer.longitude.isFinite, observer.altitudeM.isFinite,
               (-90...90).contains(observer.latitude), (-180...180).contains(observer.longitude), minimumElevation.isFinite else { return nil }
         let candidates=satellites.compactMap { satellite -> SessionRecommendation? in
-            guard let mode=satellite.modes.first(where:{ mode in
-                mode.canRelay && (mode.uplinkMHz.map{$0.isFinite && $0>0} ?? false) && (mode.downlinkMHz.map{$0.isFinite && $0>0} ?? false)
-            }), let tle=elements[satellite.id], tle.valid(for:satellite.id), tle.ageDays(at:date)<=3,
+            guard let mode=preferredRelayMode(in:satellite), let tle=elements[satellite.id], tle.valid(for:satellite.id), tle.ageDays(at:date)<=3,
             let context=contexts[satellite.id], context.matches(observer:observer,minimumElevation:minimumElevation,elements:tle) else { return nil }
             let valid=(windows[satellite.id] ?? []).filter { pass in
                 pass.rise.isFinite && pass.set.isFinite && pass.culmination.isFinite && pass.maxElevation.isFinite &&

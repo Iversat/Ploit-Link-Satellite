@@ -143,7 +143,7 @@ jobs:
             xcrun simctl shutdown "$DEVICE"
           done
       - name: Export test diagnostics
-        if: failure()
+        if: always()
         run: |
           if [ -d build/Tests.xcresult ]; then
             xcrun xcresulttool export attachments --path build/Tests.xcresult --output-path build/test-attachments

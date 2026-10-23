@@ -1,5 +1,12 @@
 import SwiftUI
 
+enum SkyScanPathRefresh {
+    static func timeSlice(for pass: PassWindow?, at date: Date) -> Int {
+        guard let pass, pass.contains(date) else { return 0 }
+        return Int(floor(date.timeIntervalSince1970 / 30))
+    }
+}
+
 struct SiteScanView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +21,8 @@ struct SiteScanView: View {
     private var assessment: SkyAssessment { scan.survey.assessment(path:path) }
     private var pathKey: String {
         let location = String(format:"%.3f/%.3f",model.observer?.latitude ?? 0,model.observer?.longitude ?? 0)
-        return "\(model.selectedID)|\(pass?.rise ?? 0)|\(model.elements?.line1 ?? "")|\(location)|\(model.minElevation)"
+        let slice = SkyScanPathRefresh.timeSlice(for:pass,at:model.clock)
+        return "\(model.selectedID)|\(pass?.rise ?? 0)|\(model.elements?.line1 ?? "")|\(location)|\(model.minElevation)|\(slice)"
     }
     private var preview: Bool {
         #if DEBUG
@@ -43,6 +51,11 @@ struct SiteScanView: View {
                                 legend("Неизвестно",color:.gray)
                             }.font(.system(size:10))
                             Text(pathMessage).font(.caption).foregroundStyle(.secondary)
+                            if scan.isSnapshot {
+                                Label("Снимок точки сканирования",systemImage:"pin.fill").font(.caption.bold()).foregroundStyle(.orange)
+                                Text("Результат относится к месту, где выполнена проверка. Движение после остановки камеры точно не отслеживается: после перемещения сканируйте заново.")
+                                    .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("scanSnapshotNotice")
+                            }
                             Text(assessment.title).font(.headline).foregroundStyle(assessment.blocked > 0 ? .orange:.white).accessibilityIdentifier("siteAssessment")
                             Text(assessment.detail).font(.caption).foregroundStyle(.secondary)
                             Text("Это оценка обзора по отмеченным направлениям. Камера не измеряет радиосигнал; связь зависит от антенны, модуля и включения ретранслятора.")
@@ -73,9 +86,15 @@ struct SiteScanView: View {
                 #endif
             }
             .onReceive(clock) { _ in
+                scan.checkLocation(model.observer)
                 scan.headingReady = model.sensors.northIsTrue && model.sensors.headingAccuracy >= 0 && model.sensors.headingAccuracy <= 20
             }
-            .onChange(of:phase) { _, value in if value == .background { captureTask?.cancel(); scan.stop() } }
+            .onChange(of:phase) { _, value in
+                if value == .background {
+                    captureTask?.cancel()
+                    scan.invalidate("Проверка сброшена после сворачивания приложения. Начните заново у антенны.")
+                }
+            }
             .onDisappear { captureTask?.cancel(); scan.stop() }
     }
     private var cameraPanel: some View {
@@ -101,11 +120,11 @@ struct SiteScanView: View {
                     Button { scan.mark(.clear) } label: { Label("Небо открыто",systemImage:"checkmark").frame(maxWidth:.infinity) }.tint(.cyan)
                     Button { scan.mark(.blocked) } label: { Label("Препятствие",systemImage:"xmark").frame(maxWidth:.infinity) }.tint(.red)
                 }.buttonStyle(.bordered).disabled(scan.direction == nil)
-                Button("Завершить сканирование") { captureTask?.cancel(); scan.stop() }.font(.subheadline)
+                Button("Завершить сканирование") { captureTask?.cancel(); scan.finish() }.font(.subheadline)
             } else {
                 Button {
                     captureTask?.cancel()
-                    captureTask = Task { await scan.start() }
+                    captureTask = Task { await scan.start(observer:model.observer) }
                 } label: { Label("Начать сканирование",systemImage:"camera.viewfinder").frame(maxWidth:.infinity).padding(.vertical,8) }
                     .buttonStyle(.borderedProminent).tint(.blue).accessibilityIdentifier("startSiteScan")
             }

@@ -2,17 +2,35 @@ import SwiftUI
 import ARKit
 import AVFoundation
 
+enum SkyScanLocation {
+    static func changed(from previous: Observer?, to current: Observer?) -> Bool {
+        guard let previous, let current else { return (previous == nil) != (current == nil) }
+        guard previous.latitude.isFinite, previous.longitude.isFinite, previous.altitudeM.isFinite,
+              current.latitude.isFinite, current.longitude.isFinite, current.altitudeM.isFinite else { return true }
+        let radians = Double.pi / 180
+        let latitude = (current.latitude-previous.latitude)*radians
+        let longitude = AimMath.wrap(current.longitude-previous.longitude)*radians
+        let a = pow(sin(latitude/2),2) + cos(previous.latitude*radians)*cos(current.latitude*radians)*pow(sin(longitude/2),2)
+        let distance = 6_371_000 * 2 * asin(sqrt(min(1,max(0,a))))
+        // AR detects small moves while scanning; GPS only invalidates a stopped
+        // snapshot after a significant change, rather than ordinary GPS noise.
+        return distance > 25 || abs(current.altitudeM-previous.altitudeM) > 25
+    }
+}
+
 @MainActor final class SkyScanController: NSObject, ObservableObject, @preconcurrency ARSessionDelegate {
     @Published private(set) var survey = SkySurvey()
     @Published private(set) var direction: SkyDirection?
     @Published private(set) var running = false
     @Published private(set) var message = "Обведите камерой небо с места установки антенны."
     @Published private(set) var moved = false
+    @Published private(set) var isSnapshot = false
     var headingReady = false
     let session = ARSession()
     let supportsDepth = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
     private var lastSample: TimeInterval = 0
     private var origin: SIMD3<Float>?
+    private var scanObserver: Observer?
     private var startToken = UUID()
     private var isPreview = false
 
@@ -21,7 +39,7 @@ import AVFoundation
         session.delegate = self
         session.delegateQueue = .main
     }
-    func start() async {
+    func start(observer: Observer?) async {
         let token = UUID(); startToken = token
         guard ARWorldTrackingConfiguration.isSupported else { message = "Камера AR недоступна на этом устройстве."; return }
         let allowed: Bool
@@ -42,11 +60,23 @@ import AVFoundation
             configuration.videoFormat = format
         }
         survey = SkySurvey(); origin = nil; moved = false; direction = nil; lastSample = 0
+        scanObserver = observer; isSnapshot = false
         session.run(configuration, options:[.resetTracking, .removeExistingAnchors])
         running = true
     }
     func stop() {
         startToken = UUID(); session.pause(); running = false; direction = nil
+    }
+    func finish() {
+        stop(); isSnapshot = true
+        message = "Сохранён снимок точки сканирования. После перемещения выполните проверку заново."
+    }
+    func invalidate(_ reason: String) {
+        stop(); survey = SkySurvey(); isSnapshot = false; scanObserver = nil; message = reason
+    }
+    func checkLocation(_ observer: Observer?) {
+        guard running || isSnapshot, SkyScanLocation.changed(from:scanObserver,to:observer) else { return }
+        invalidate("Координаты точки изменились или недоступны. Начните новое сканирование у антенны.")
     }
     func mark(_ state: SkyCellState) {
         guard running, !moved, let direction, headingReady || isPreview else { return }
@@ -63,7 +93,7 @@ import AVFoundation
         let position = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
         if origin == nil { origin = position }
         if let origin, simd_distance(origin,position) > 1.5 {
-            moved = true; survey = SkySurvey(); stop(); message = "Точка изменилась. Начните новое сканирование у антенны."; return
+            moved = true; invalidate("Точка изменилась. Начните новое сканирование у антенны."); return
         }
         let forward = -SIMD3<Float>(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
         direction = Self.skyDirection(forward)
@@ -108,8 +138,8 @@ import AVFoundation
         return .init(azimuth:(atan2(Double(unit.x),Double(-unit.z))*180 / .pi+360).truncatingRemainder(dividingBy:360),
                      elevation:asin(min(1,max(-1,Double(unit.y))))*180 / .pi)
     }
-    func session(_ session: ARSession, didFailWithError error: Error) { stop(); message = "Сканирование остановлено. Попробуйте ещё раз при лучшем освещении." }
-    func sessionWasInterrupted(_ session: ARSession) { stop(); message = "Сканирование прервано. Начните заново с той же точки." }
+    func session(_ session: ARSession, didFailWithError error: Error) { invalidate("Сканирование остановлено. Попробуйте ещё раз при лучшем освещении.") }
+    func sessionWasInterrupted(_ session: ARSession) { invalidate("Сканирование прервано. Начните заново с той же точки.") }
     #if DEBUG
     func preview() {
         isPreview = true; headingReady = true

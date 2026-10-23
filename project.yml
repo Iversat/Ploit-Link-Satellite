@@ -29,7 +29,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark
-        NSLocationWhenInUseUsageDescription: Ваше положение нужно для расчёта направления на спутник и времени пролёта. Координаты остаются на устройстве.
+        NSLocationWhenInUseUsageDescription: Ваше положение нужно для расчёта направления на спутник и времени пролёта. Только по кнопке загрузки погоды округлённые координаты передаются Open-Meteo.
         NSMotionUsageDescription: Датчики движения нужны, чтобы навести верхний торец телефона или внешнюю антенну на спутник.
         NSCameraUsageDescription: Камера и LiDAR нужны для карты препятствий на пути спутника. Кадры обрабатываются на устройстве и не отправляются.
     settings:

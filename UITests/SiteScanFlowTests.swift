@@ -2,6 +2,22 @@ import XCTest
 
 final class SiteScanFlowTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    func testWeatherIsOptionalAndScannerClosesAfterOpeningConditions() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-site-scan"]; app.launch()
+        XCTAssertTrue(app.buttons["closeSiteScan"].waitForExistence(timeout:10))
+        let conditions = app.buttons["siteWeatherDisclosure"]
+        for _ in 0..<5 where !conditions.isHittable { app.swipeUp() }
+        XCTAssertTrue(conditions.isHittable)
+        conditions.tap()
+        let load = app.buttons["loadSiteWeather"]
+        for _ in 0..<3 where !load.isHittable { app.swipeUp() }
+        XCTAssertTrue(load.isHittable)
+        XCTAssertTrue(load.isEnabled)
+        let screenshot = XCTAttachment(screenshot:app.screenshot())
+        screenshot.name = "weather-controls"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["closeSiteScan"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
+    }
     func testScannerCanOpenAndCloseWithoutStartingCamera() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-home"]; app.launch()
         let open = app.buttons["openSiteScan"]

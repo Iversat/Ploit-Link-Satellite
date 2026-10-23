@@ -51,6 +51,19 @@ final class SessionRecommendationTests: XCTestCase {
         f.satellites[2].modes=[]
         XCTAssertNil(f.result())
     }
+    func testAutoRetainsEligibleFMButReplacesTelemetryOrInvalidModes() throws {
+        var satellite=try fixture().satellites[0]
+        satellite.modes=[
+            RadioMode(id:"aprs",name:"APRS",uplinkMHz:437.825,downlinkMHz:437.825,detail:"",canRelay:true),
+            RadioMode(id:"fm",name:"FM",uplinkMHz:145.99,downlinkMHz:437.8,detail:"",canRelay:true),
+            RadioMode(id:"telemetry",name:"Telemetry",uplinkMHz:nil,downlinkMHz:437.025,detail:"",canRelay:false)
+        ]
+        XCTAssertEqual(SessionRecommendation.preferredRelayMode(in:satellite,preferredID:"fm")?.id,"fm")
+        XCTAssertEqual(SessionRecommendation.preferredRelayMode(in:satellite,preferredID:"telemetry")?.id,"aprs")
+        satellite.modes[1].uplinkMHz = .nan
+        XCTAssertEqual(SessionRecommendation.preferredRelayMode(in:satellite,preferredID:"fm")?.id,"aprs")
+        XCTAssertEqual(SessionRecommendation.preferredRelayMode(in:satellite,preferredID:"missing")?.id,"aprs")
+    }
     func testEqualStartKeepsSelectionThenUsesElevationAndStableID() throws {
         var f=try fixture(); f.window(0,rise:60,set:360,elevation:40); f.window(1,rise:60,set:360,elevation:70)
         XCTAssertEqual(f.result(preferred:f.satellites[0].id)?.satellite.id,f.satellites[0].id)
@@ -97,5 +110,23 @@ final class SessionRecommendationTests: XCTestCase {
         model.calculatingSessions=true; XCTAssertFalse(model.automaticSelectionAllowed); model.calculatingSessions=false
         model.autoSelectSatellite=false; XCTAssertFalse(model.automaticSelectionAllowed)
         XCTAssertFalse(UserDefaults.standard.bool(forKey:"autoSelectSatellite"))
+    }
+    @MainActor func testCompleteLocalCatalogueUnblocksAutoBeforeRemoteRefreshEnds() {
+        let old=UserDefaults.standard.object(forKey:"autoSelectSatellite")
+        defer {
+            if let old { UserDefaults.standard.set(old,forKey:"autoSelectSatellite") }
+            else { UserDefaults.standard.removeObject(forKey:"autoSelectSatellite") }
+        }
+        let model=AppModel(); model.autoSelectSatellite=true
+        model.beginLocalSessionCalculation()
+        XCTAssertFalse(model.automaticSelectionAllowed)
+        model.completeLocalSessionCalculation()
+        XCTAssertTrue(model.calculatingSessions,"Remote refresh remains in progress")
+        XCTAssertTrue(model.automaticSelectionAllowed,"Completed local windows must not wait for the network")
+        model.pointing=true
+        XCTAssertFalse(model.automaticSelectionAllowed)
+        model.pointing=false
+        model.beginLocalSessionCalculation()
+        XCTAssertFalse(model.automaticSelectionAllowed,"A changed context must wait for the next full local calculation")
     }
 }

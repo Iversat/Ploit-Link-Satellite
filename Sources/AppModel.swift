@@ -22,6 +22,7 @@ enum HomePanel: String, Identifiable {
         }
     }
     @Published var calculatingSessions = false
+    private(set) var localSessionsReady = false
     @Published var orbitPresented = false
     @Published var scannerPresented = false
     @Published var homePanel: HomePanel?
@@ -70,11 +71,17 @@ enum HomePanel: String, Identifiable {
                                    elements:fleetElements,observer:observer,minimumElevation:minElevation,
                                    date:clock,preferredID:selectedID)
     }
-    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !orbitPending && homePanel == nil && !calculatingSessions }
+    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !orbitPending && homePanel == nil && (!calculatingSessions || localSessionsReady) }
+    func beginLocalSessionCalculation() { localSessionsReady=false; calculatingSessions=true }
+    func completeLocalSessionCalculation() {
+        localSessionsReady=true
+        applyAutomaticSelectionIfNeeded()
+    }
     func applyAutomaticSelectionIfNeeded() {
         guard automaticSelectionAllowed, automaticSelectionTask == nil, let candidate=recommendedSession else { return }
         if candidate.satellite.id == selectedID {
-            if modeID != candidate.mode.id { modeID=candidate.mode.id }
+            let preferred=SessionRecommendation.preferredRelayMode(in:candidate.satellite,preferredID:modeID) ?? candidate.mode
+            if modeID != preferred.id { modeID=preferred.id }
             return
         }
         automaticSelectionTask=Task { [weak self] in
@@ -185,7 +192,7 @@ enum HomePanel: String, Identifiable {
             }
         }
     }
-    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; automaticSelectionTask?.cancel(); automaticSelectionTask=nil; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
+    func deactivate() { activated = false; ticker?.cancel(); ticker = nil; fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; localSessionsReady=false; automaticSelectionTask?.cancel(); automaticSelectionTask=nil; sensors.stop(); UIApplication.shared.isIdleTimerDisabled = false }
     func select(id: Int, preferredModeID: String? = nil) async {
         let token = UUID(); selectionToken = token
         refreshToken = UUID(); updating = false
@@ -258,14 +265,14 @@ enum HomePanel: String, Identifiable {
     }
     func refreshSessions(force: Bool = false) {
         guard let observer else {
-            fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false
+            fleetTask?.cancel(); fleetToken=UUID(); calculatingSessions=false; localSessionsReady=false
             sessionWindows=[:]; sessionContexts=[:]; sessionsObserver=nil
             return
         }
         guard !calculatingSessions || force else { return }
         fleetTask?.cancel()
         let token=UUID(),date=Date(),mask=minElevation
-        fleetToken=token; calculatingSessions=true
+        fleetToken=token; beginLocalSessionCalculation()
         if sessionsObserver.map({!SessionPredictionContext.sameLocation($0,observer)}) ?? true || sessionsMask != mask { sessionWindows=[:]; sessionContexts=[:] }
         sessionsObserver=observer; sessionsMask=mask
         let ids=satellites.map(\.id)
@@ -285,6 +292,7 @@ enum HomePanel: String, Identifiable {
                     sessionContexts[id]=SessionPredictionContext(observer:observer,minimumElevation:mask,elements:value)
                 }
             }
+            completeLocalSessionCalculation()
             guard !screenshotMode else { return }
             for id in ids {
                 guard !Task.isCancelled, fleetToken==token else { return }

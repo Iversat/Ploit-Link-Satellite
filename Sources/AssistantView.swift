@@ -23,6 +23,8 @@ struct AssistantView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         GeometryReader { geometry in
+            let markerY = (geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom)
+                * CGFloat(EarthView.observerScreenY) - geometry.safeAreaInsets.top
             ZStack {
                 (model.pointing && model.pointingStyle == .radar ? Color(red:0.025,green:0.03,blue:0.04) : Color.black).ignoresSafeArea()
                 if !model.pointing || model.pointingStyle == .earth {
@@ -30,14 +32,15 @@ struct AssistantView: View {
                     LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
                 }
                 if model.pointing { PointingView() } else {
+                    Circle().fill(.white.opacity(0.45)).frame(width:12,height:12)
+                        .overlay(Circle().stroke(.white,lineWidth:3).frame(width:19,height:19))
+                        .shadow(color:.white.opacity(0.5),radius:12)
+                        .position(x:geometry.size.width/2,y:markerY)
+                        .allowsHitTesting(false).accessibilityLabel("Ваше местоположение на иллюстрации Земли")
                     ScrollView {
                     VStack(spacing: 0) {
                         AssistantHeader { model.homePanel = .settings }
-                        Spacer(minLength: 40)
-                        Circle().fill(.white.opacity(0.45)).frame(width: 12,height: 12)
-                            .overlay(Circle().stroke(.white,lineWidth: 3).frame(width: 19,height: 19))
-                            .shadow(color: .white.opacity(0.5),radius: 12).accessibilityLabel("Ваше местоположение на иллюстрации Земли")
-                        Spacer(minLength: 34)
+                        Spacer(minLength:max(70,markerY - 36))
                         SatelliteGlassGroup {
                         VStack(spacing: 12) {
                             status
@@ -67,7 +70,7 @@ struct AssistantView: View {
                         }
                         }
                         .padding(.horizontal,22)
-                        Spacer().frame(height: max(30,geometry.size.height * 0.09))
+                        Spacer().frame(height:30)
                         HStack(spacing: 6) {
                             Image(systemName: "location.fill").font(.system(size: 9))
                             Text(model.manualLocation ? "Координаты заданы вручную" : model.observer == nil ? "Ожидание геопозиции" : "Геопозиция на устройстве")
