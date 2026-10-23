@@ -171,7 +171,7 @@ actor ElementStore {
             if index==0 && now()<celestrakRetryAfter { continue }
             do {
                 var request=URLRequest(url:URL(string:source)!,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:15)
-                request.setValue("PLS/1.5",forHTTPHeaderField:"User-Agent")
+                request.setValue("PLS",forHTTPHeaderField:"User-Agent")
                 let (data,response)=try await loader(request)
                 try Task.checkCancellation()
                 if index==0,let http=response as? HTTPURLResponse,[403,429].contains(http.statusCode) {

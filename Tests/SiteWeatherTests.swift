@@ -165,6 +165,22 @@ final class SiteWeatherTests: XCTestCase {
         XCTAssertEqual(service.forecast,cached)
     }
 
+    @MainActor func testConnectionRecoveryClearsOfflineNoticeWithoutRefetchingFreshCache() async throws {
+        let date=Date(timeIntervalSince1970:1792774800)
+        let network=WeatherNetworkStub(date:date)
+        let service=SiteWeatherService(persistsCache:false,now:{date},loader:{try await network.load($0)})
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        await settle(service)
+        let cached=try XCTUnwrap(service.forecast)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:false)
+        XCTAssertTrue(service.errorMessage?.contains("Нет интернета") == true)
+        service.refreshIfNeeded(observer:.preview,networkAvailable:true)
+        XCTAssertNil(service.errorMessage)
+        XCTAssertEqual(service.forecast,cached)
+        XCTAssertFalse(service.isLoading)
+        await assertCount(network,1)
+    }
+
     @MainActor func testLocationChangeAndCancellationCannotPublishOldWeatherForNewPlace() async throws {
         let date=Date(timeIntervalSince1970:1792774800)
         let network=WeatherNetworkStub(date:date,delay:80_000_000)
