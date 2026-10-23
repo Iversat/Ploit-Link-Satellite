@@ -3,6 +3,74 @@ import simd
 @testable import PloitSatellite
 
 final class SkyScanGeometryTests: XCTestCase {
+    func testCollectionExcludesMeasuredControlsAndInvalidViewport() {
+        let visible = CGRect(x:0,y:0.25,width:1,height:0.4)
+        XCTAssertTrue(SkyScanCollectionArea.contains(CGPoint(x:0.5,y:0.5),visible:visible))
+        XCTAssertFalse(SkyScanCollectionArea.contains(CGPoint(x:0.5,y:0.2),visible:visible),"A point hidden by the header must not collect.")
+        XCTAssertFalse(SkyScanCollectionArea.contains(CGPoint(x:0.5,y:0.75),visible:visible),"A point hidden by the bottom controls must not collect.")
+        XCTAssertFalse(SkyScanCollectionArea.contains(CGPoint(x:0.1,y:0.5),visible:visible),"Visible peripheral points still need central dwell.")
+        for rect in [CGRect.zero,CGRect.null,CGRect.infinite,
+                     CGRect(x:0.4,y:0.4,width:0.01,height:0.4),CGRect(x:0.4,y:0.4,width:-0.2,height:0.4)] {
+            XCTAssertFalse(SkyScanCollectionArea.contains(CGPoint(x:0.5,y:0.5),visible:rect))
+        }
+    }
+    func testNewCollectionAnimatesAndPulsesOnceButRevisitingStaysSilent() {
+        var survey = SkySurvey(), animation = SkyScanCollectionAnimation(), feedback = SkyScanCollectionFeedback()
+        let first = survey.collect([10,11])
+        XCTAssertEqual(first,[10,11])
+        animation.update(newIDs:first,at:1,enabled:true)
+        XCTAssertEqual(animation.progress(for:10,at:1),0)
+        XCTAssertTrue(feedback.shouldPulse(newCount:first.count,at:1,collecting:true,preview:false))
+        let repeated = survey.collect([10,11])
+        XCTAssertTrue(repeated.isEmpty)
+        animation.update(newIDs:repeated,at:1.16,enabled:true)
+        XCTAssertEqual(animation.progress(for:10,at:1.16) ?? -1,0.5,accuracy:0.00001)
+        XCTAssertFalse(feedback.shouldPulse(newCount:repeated.count,at:1.16,collecting:true,preview:false))
+        animation.update(newIDs:survey.collect([10,11]),at:2,enabled:true)
+        XCTAssertNil(animation.progress(for:10,at:2))
+        XCTAssertFalse(feedback.shouldPulse(newCount:survey.collect([10,11]).count,at:2,collecting:true,preview:false))
+        animation.update(newIDs:[12],at:3,enabled:true)
+        animation.update(newIDs:[],at:3.1,enabled:false)
+        XCTAssertNil(animation.progress(for:12,at:3.1))
+    }
+    func testHiddenDirectionsNeedFreshVisibleDwellBeforeAffectingCoverage() {
+        var survey = SkySurvey(), dwell = SkyScanDwell()
+        let points = [10:CGPoint(x:0.5,y:0.75),11:CGPoint(x:0.5,y:0.5)]
+        let masked = CGRect(x:0,y:0.25,width:1,height:0.4)
+        func frame(_ time: Double,_ area: CGRect) -> Set<Int> {
+            let candidates = Set(points.compactMap { id,point in
+                !survey.collectedCells.contains(id) && SkyScanCollectionArea.contains(point,visible:area) ? id:nil
+            })
+            let progress = dwell.update(ids:candidates,at:time,enabled:true)
+            return survey.collect(Set(progress.filter { $0.value >= 1 }.map(\.key)))
+        }
+        XCTAssertTrue(frame(0,masked).isEmpty)
+        XCTAssertTrue(frame(0.2,masked).isEmpty)
+        XCTAssertEqual(frame(0.4,masked),[11])
+        XCTAssertEqual(survey.collectedCells,[11],"An occluded camera direction cannot increase coverage or trigger feedback.")
+        XCTAssertTrue(frame(0.5,.zero).isEmpty)
+        XCTAssertTrue(frame(0.6,SkyScanCollectionArea.central).isEmpty)
+        XCTAssertTrue(frame(0.8,SkyScanCollectionArea.central).isEmpty,"The newly revealed point must not inherit hidden dwell time.")
+        XCTAssertEqual(frame(1.01,SkyScanCollectionArea.central),[10])
+        XCTAssertTrue(frame(1.2,SkyScanCollectionArea.central).isEmpty,"Revisiting covered directions cannot collect them again.")
+    }
+    func testPreviewUsesRealAngularProjectionWithoutFabricatedCollectionProgress() throws {
+        var survey = SkySurvey()
+        survey.collect(Set(survey.cells.indices.filter { SkySurvey.direction(at:$0).azimuth < 180 }))
+        for size in [CGSize(width:390,height:844),CGSize(width:375,height:667)] {
+            let targets = SkyScanPreviewGeometry.targets(survey:survey,size:size)
+            XCTAssertGreaterThan(targets.count,30)
+            XCTAssertTrue(targets.contains(where: \.collected))
+            XCTAssertTrue(targets.contains(where: { !$0.collected }))
+            XCTAssertTrue(targets.allSatisfy { $0.dwellFraction == 0 && $0.collectionProgress == nil })
+            let projection = SkyScanPreviewGeometry.projection(size:size)
+            for target in targets {
+                let point = try XCTUnwrap(projection.project(SkySurvey.direction(at:target.id)))
+                XCTAssertEqual(target.x,Double(point.x),accuracy:0.000001)
+                XCTAssertEqual(target.y,Double(point.y),accuracy:0.000001)
+            }
+        }
+    }
     private let intrinsics = simd_float3x3(SIMD3<Float>(500,0,0),SIMD3<Float>(0,500,0),SIMD3<Float>(500,500,1))
     private func projection(rotation: simd_float3x3 = matrix_identity_float3x3,
                             display: CGAffineTransform = .identity) -> SkyScanProjection {

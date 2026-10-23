@@ -75,6 +75,7 @@ enum SkyScanLocation {
     var coveredTargetCount: Int { survey.coveredCellCount }
     let totalTargetCount = SkySurvey.columns * SkySurvey.rows
     var headingReady = false
+    var collectionViewport = SkyScanCollectionArea.central
     let session = ARSession()
     let supportsDepth = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
     private var lastSample: TimeInterval = 0
@@ -90,6 +91,7 @@ enum SkyScanLocation {
     private var torchChanging = false
     private var lastTorchRefresh: TimeInterval = 0
     private var feedback = SkyScanCollectionFeedback()
+    private var collectionAnimation = SkyScanCollectionAnimation()
     private var collectionHaptic: UIImpactFeedbackGenerator?
 
     init(torch: SkyScanTorchControlling? = nil) {
@@ -130,7 +132,7 @@ enum SkyScanLocation {
             survey = SkySurvey(); coverageFraction = 0; origin = nil; moved = false
             scanObserver = observer; isSnapshot = false; startAzimuth = nil
         }
-        feedback.reset()
+        feedback.reset(); collectionAnimation.reset()
         collectionHaptic = collecting ? UIImpactFeedbackGenerator(style:.soft):nil
         collectionHaptic?.prepare()
         direction = nil; lastTorchRefresh = 0; lastSample = 0; lastProjection = 0; projectedTargets = []; dwell.reset()
@@ -146,7 +148,7 @@ enum SkyScanLocation {
     func stop() {
         startToken = UUID(); running = false; direction = nil; collecting = false
         requestTorch(false); session.pause()
-        projectedTargets = []; dwell.reset(); feedback.reset(); collectionHaptic = nil
+        projectedTargets = []; dwell.reset(); feedback.reset(); collectionAnimation.reset(); collectionHaptic = nil
     }
     func finish() {
         stop(); isSnapshot = true
@@ -185,7 +187,13 @@ enum SkyScanLocation {
         torchAvailable = running && !isPreview && (torch.available || torch.isOn)
         isTorchOn = torch.isOn
     }
-    func setViewport(_ size: CGSize) { viewportSize = size }
+    func setViewport(_ size: CGSize) {
+        guard size != viewportSize else { return }
+        viewportSize = size
+        #if DEBUG
+        if isPreview, direction != nil { projectedTargets = SkyScanPreviewGeometry.targets(survey:survey,size:size) }
+        #endif
+    }
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard running, frame.timestamp - lastProjection >= 1.0/35 else { return }
         lastProjection = frame.timestamp
@@ -231,12 +239,13 @@ enum SkyScanLocation {
             }
         }
         let candidates = Set(visible.compactMap { index,point -> Int? in
-            guard !result.collectedCells.contains(index), (0.18...0.82).contains(point.x), (0.18...0.82).contains(point.y) else { return nil }
+            guard !result.collectedCells.contains(index), SkyScanCollectionArea.contains(point,visible:collectionViewport) else { return nil }
             return index
         })
         let progress = dwell.update(ids:candidates,at:frame.timestamp,enabled:collecting)
-        let newlyCollected = Set(progress.filter { $0.value >= 1 }.map(\.key))
-        if collecting { result.collect(newlyCollected) }
+        let completed = Set(progress.filter { $0.value >= 1 }.map(\.key))
+        let newlyCollected = collecting ? result.collect(completed):[]
+        collectionAnimation.update(newIDs:newlyCollected,at:frame.timestamp,enabled:collecting && !isPreview)
         if feedback.shouldPulse(newCount:newlyCollected.count,at:frame.timestamp,collecting:collecting,preview:isPreview) {
             collectionHaptic?.impactOccurred(intensity:0.45)
             collectionHaptic?.prepare()
@@ -280,7 +289,8 @@ enum SkyScanLocation {
         }
         projectedTargets = visible.map { index,point in
             SkyScanTarget(id:index,x:Double(point.x),y:Double(point.y),state:result.cells[index],
-                          collected:result.collectedCells.contains(index),dwellFraction:progress[index] ?? 0)
+                          collected:result.collectedCells.contains(index),dwellFraction:progress[index] ?? 0,
+                          collectionProgress:collectionAnimation.progress(for:index,at:frame.timestamp))
         }
     }
     private static func skyDirection(_ vector: SIMD3<Float>) -> SkyDirection {
@@ -307,14 +317,9 @@ enum SkyScanLocation {
         coverageFraction = survey.coverageFraction
         isSnapshot = true; self.collecting = capture && collecting
         if capture {
-            direction = .init(azimuth:135,elevation:45)
-            projectedTargets = (0..<60).map { index in
-                let column = (index % 10)*SkySurvey.columns/10
-                let row = SkySurvey.rows/3 + index/10
-                let cell = row*SkySurvey.columns+column
-                return SkyScanTarget(id:cell,x:0.07+Double(index % 10)*0.095,y:0.10+Double(index / 10)*0.145,
-                    state:survey.cells[cell],collected:survey.collectedCells.contains(cell),dwellFraction:index == 8 ? 0.65:0)
-            }
+            direction = SkyScanPreviewGeometry.direction
+            let size = viewportSize.width > 0 && viewportSize.height > 0 ? viewportSize:CGSize(width:390,height:844)
+            projectedTargets = SkyScanPreviewGeometry.targets(survey:survey,size:size)
         }
         message = "Демонстрация · камера не используется"
     }

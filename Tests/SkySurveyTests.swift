@@ -77,7 +77,9 @@ final class SkySurveyTests: XCTestCase {
         let blocked = SkySurvey.direction(at:30), clear = SkySurvey.direction(at:150)
         survey.mark(blocked,state:.blocked); survey.mark(clear,state:.clear)
         XCTAssertEqual(survey.coverageFraction,0,"Manual classification is separate from camera coverage.")
-        survey.collect([30,150]); survey.collect([30,150])
+        XCTAssertEqual(survey.collect([30,150]),[30,150])
+        XCTAssertTrue(survey.collect([30,150]).isEmpty)
+        XCTAssertTrue(survey.collect([-1,SkySurvey.columns*SkySurvey.rows]).isEmpty)
         XCTAssertEqual(survey.coveredCellCount,2)
         XCTAssertEqual(survey.cells[30],.blocked); XCTAssertEqual(survey.cells[150],.clear)
     }

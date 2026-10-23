@@ -55,10 +55,15 @@ final class SkyDomeProjectionTests: XCTestCase {
         XCTAssertTrue(projection.isVisible(segment.1))
     }
 
-    func testPointCloudUsesEverySurveyCellWithoutChangingCoverage() {
+    func testSparsePointCloudReadsRealSurveyCellsWithoutPolarBands() {
         let mesh = SkyDomePoint.mesh
-        XCTAssertEqual(mesh.count,3_072)
-        XCTAssertEqual(Set(mesh.map(\.cell)).count,SkySurvey.columns*SkySurvey.rows)
+        XCTAssertEqual(mesh.count,1_536)
+        XCTAssertEqual(SkySurvey.columns*SkySurvey.rows,1_296,"Display density must not change captured data resolution.")
+        // Equal increments of z divide the hemisphere into equal-area bands.
+        // The former extra centre points must not form crowded zenith rings.
+        for (first,last) in zip(mesh,mesh.dropFirst()) {
+            XCTAssertEqual(last.vector.z-first.vector.z,1/Double(mesh.count),accuracy:1e-12)
+        }
         for point in mesh {
             XCTAssertEqual(point.vector.dot(point.vector),1,accuracy:1e-12)
             XCTAssertTrue((0...1).contains(point.vector.z))
@@ -68,6 +73,43 @@ final class SkyDomeProjectionTests: XCTestCase {
         }
         let empty = SkySurvey()
         XCTAssertTrue(mesh.allSatisfy { empty.cells[$0.cell] == .unknown })
+    }
+
+    func testObserverFacesRecordedWorldBearingWithPhoneInFront() {
+        for bearing in [0.0,45,90,135,180,270,359] {
+            let pose = SkyDomeObserverPose(startAzimuth:bearing)
+            let expected = vector(bearing,0)
+            XCTAssertEqual(pose.forward.x,expected.x,accuracy:1e-12)
+            XCTAssertEqual(pose.forward.y,expected.y,accuracy:1e-12)
+            XCTAssertEqual(pose.forward.dot(pose.right),0,accuracy:1e-12)
+            let phone = pose.point(forward:0.225,height:0.415)
+            XCTAssertEqual(phone.dot(pose.forward),0.225,accuracy:1e-12)
+            XCTAssertEqual(phone.dot(pose.right),0,accuracy:1e-12)
+            XCTAssertEqual(phone.z,0.415,accuracy:1e-12)
+            let orientation = SkyDomeOrientation.resolve(startAzimuth:bearing,viewingDirection:nil)
+            let projection = SkyDomeProjection(yaw:orientation.yaw,pitch:orientation.pitch)
+            XCTAssertEqual(projection.projected(pose.forward).x,0,accuracy:1e-12)
+            XCTAssertGreaterThan(projection.projected(pose.forward).depth,0)
+        }
+        XCTAssertEqual(SkyDomeObserverPose(startAzimuth:nil).forward,SkyDomeObserverPose(startAzimuth:.nan).forward)
+    }
+
+    func testObserverKeepsInitialHeadingWhenCameraShowsFrontProfileOrBack() {
+        let pose = SkyDomeObserverPose(startAzimuth:135)
+        let forward = pose.forward
+        var depths: [Double] = []
+        for bearing in [135.0,225,315] {
+            let orientation = SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:bearing,elevation:32))
+            let projection = SkyDomeProjection(yaw:orientation.yaw,pitch:orientation.pitch)
+            depths.append(projection.projected(pose.forward).depth)
+            XCTAssertEqual(pose.forward,forward,"Inspection must rotate the camera, not the recorded observer.")
+            let shoulders = [-0.108,0.108].map { pose.point(side:$0,height:0.425) }
+            XCTAssertEqual(shoulders[0].z,shoulders[1].z,accuracy:1e-12)
+            XCTAssertEqual(shoulders[1].dot(pose.right)-shoulders[0].dot(pose.right),0.216,accuracy:1e-12)
+        }
+        XCTAssertGreaterThan(depths[0],0.8)
+        XCTAssertEqual(depths[1],0,accuracy:1e-12)
+        XCTAssertLessThan(depths[2],-0.8)
     }
 
     func testTrackRejectsHiddenSegmentsAndClipsHorizon() throws {

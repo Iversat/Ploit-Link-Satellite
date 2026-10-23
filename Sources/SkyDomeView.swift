@@ -116,27 +116,38 @@ struct SkyDomeTrackSegment {
     }
 }
 
-// One centre point represents every real cell, including small zenith bins;
-// an equal-area set adds visual density without inventing classifications.
+// Rendering density is independent of the captured 5-degree survey grid.
+// Equal-area points avoid dense polar rings; each reads its actual cell.
 struct SkyDomePoint {
     let vector: SkyDomeVector
     let cell: Int
     static let mesh: [Self] = {
-        let cellCount = SkySurvey.columns * SkySurvey.rows
-        let count = max(0,3_072-cellCount)
+        let count = 1_536
         let goldenAngle = .pi * (3 - sqrt(5.0))
-        var points = (0..<cellCount).map { index in
-            Self(vector:SkyDomeProjection.vector(SkySurvey.direction(at:index))!,cell:index)
-        }
-        points += (0..<count).map { index in
+        return (0..<count).map { index in
             let z = (Double(index)+0.5)/Double(count)
             let azimuth = (Double(index)*goldenAngle).truncatingRemainder(dividingBy:2 * .pi)
             let direction = SkyDirection(azimuth:azimuth*180 / .pi,elevation:asin(z)*180 / .pi)
             return Self(vector:SkyDomeProjection.vector(direction)!,
                         cell:SkySurvey.index(azimuth:direction.azimuth,elevation:direction.elevation)!)
         }
-        return points
     }()
+}
+
+struct SkyDomeObserverPose {
+    let forward: SkyDomeVector
+    let right: SkyDomeVector
+
+    init(startAzimuth: Double?) {
+        let azimuth = startAzimuth.flatMap { $0.isFinite ? $0:nil } ?? 180
+        let angle = azimuth * .pi / 180
+        forward = .init(x:sin(angle),y:cos(angle),z:0)
+        right = .init(x:cos(angle),y:-sin(angle),z:0)
+    }
+
+    func point(side: Double = 0, forward distance: Double = 0, height: Double) -> SkyDomeVector {
+        .init(x:right.x*side+forward.x*distance,y:right.y*side+forward.y*distance,z:height)
+    }
 }
 
 struct SkyDomeView: View {
@@ -191,7 +202,7 @@ struct SkyDomeView: View {
                         .contentShape(Rectangle())
                         .highPriorityGesture(dragGesture,including:followsPhone ? .none:.all)
                         .accessibilityElement(children:.ignore)
-                        .accessibilityLabel("Объёмная точечная карта неба. iPhone в центре. Белый — отмеченное открытое небо, красный — препятствия, серый — не проверено" + (showPassPath ? ", золотой — путь спутника":""))
+                        .accessibilityLabel("Объёмная точечная карта неба. Человек с iPhone смотрит в сторону начала сканирования. Белый — отмеченное открытое небо, красный — препятствия, серый — не проверено" + (showPassPath ? ", золотой — путь спутника":""))
                         .accessibilityValue(String(format:"yaw %.2f pitch %.2f",locale:Locale(identifier:"en_US_POSIX"),orientation.yaw,orientation.pitch))
                         .accessibilityIdentifier("skyDome")
                     if followsPhone && live == nil {
@@ -300,38 +311,104 @@ struct SkyDomeView: View {
             context.stroke(Path(ellipseIn:CGRect(x:p.x-4,y:p.y-4,width:8,height:8)),with:.color(.white),lineWidth:1.5)
             context.fill(Path(ellipseIn:CGRect(x:p.x-1,y:p.y-1,width:2,height:2)),with:.color(.white))
         }
-        drawDevice(in:context,center:center,radius:radius)
+        drawObserver(in:context,projection:projection,center:center,radius:radius)
     }
 
-    private func drawDevice(in context: GraphicsContext, center: CGPoint, radius: Double) {
-        // A screen-facing marker stays recognisable even at a low dome angle.
-        // Its anchor is the observer, while the compass describes world bearing.
-        let height = CGFloat(min(62,max(48,radius*0.44))), width = height*0.49
-        let frame = CGRect(x:center.x-width/2,y:center.y-height/2,width:width,height:height)
-        let shadow = CGRect(x:center.x-width*0.8,y:frame.maxY-5,width:width*1.6,height:12)
-        context.fill(Path(ellipseIn:shadow),with:.color(.black.opacity(0.65)))
-        let side = Path(roundedRect:frame.offsetBy(dx:1.5,dy:2),cornerRadius:width*0.17)
-        context.fill(side,with:.color(Color(white:0.35)))
-        let body = Path(roundedRect:frame,cornerRadius:width*0.17)
-        context.fill(body,with:.color(Color(white:0.88)))
-        context.stroke(body,with:.color(.white.opacity(0.95)),lineWidth:1)
-        let bump = CGRect(x:frame.minX+width*0.09,y:frame.minY+width*0.10,
-                          width:width*0.65,height:width*0.68)
-        context.fill(Path(roundedRect:bump,cornerRadius:width*0.12),with:.color(Color(white:0.73)))
-        let lensRadius = width*0.105
-        for (x,y) in [(0.25,0.27),(0.25,0.73),(0.70,0.50)] {
-            let lens = CGRect(x:bump.minX+bump.width*CGFloat(x)-lensRadius,y:bump.minY+bump.height*CGFloat(y)-lensRadius,
-                              width:lensRadius*2,height:lensRadius*2)
-            context.fill(Path(ellipseIn:lens),with:.color(Color(white:0.12)))
-            context.stroke(Path(ellipseIn:lens),with:.color(Color(white:0.45)),lineWidth:0.7)
-            context.fill(Path(ellipseIn:CGRect(x:lens.minX+1,y:lens.minY+1,width:1.3,height:1.3)),with:.color(.white.opacity(0.7)))
+    private func drawObserver(in context: GraphicsContext, projection: SkyDomeProjection,
+                              center: CGPoint, radius: Double) {
+        let pose = SkyDomeObserverPose(startAzimuth:startAzimuth)
+        // The person stays fixed in world space when the map or phone turns.
+        // Depth sorting exposes the back, profile or face without mirroring it.
+        let scale = max(100,min(145,radius))
+        struct Part {
+            var path: Path
+            var depth: Double
+            var white: Double
+            var width: CGFloat = 0
+            var outline = true
         }
-        let magnetRadius = width*0.24
-        let magnet = CGRect(x:center.x-magnetRadius,y:center.y+height*0.12-magnetRadius,
-                            width:magnetRadius*2,height:magnetRadius*2)
-        context.stroke(Path(ellipseIn:magnet),with:.color(Color(white:0.58)),lineWidth:0.8)
-        var stem = Path(); stem.move(to:CGPoint(x:center.x,y:magnet.maxY+2))
-        stem.addLine(to:CGPoint(x:center.x,y:magnet.maxY+5))
-        context.stroke(stem,with:.color(Color(white:0.58)),style:StrokeStyle(lineWidth:0.8,lineCap:.round))
+        var parts: [Part] = []
+        func screen(_ point: SkyDomeVector) -> CGPoint {
+            let p = projection.projected(point)
+            return .init(x:center.x+CGFloat(p.x*scale),y:center.y-CGFloat(p.y*scale))
+        }
+        func limb(_ points: [SkyDomeVector], width: Double, white: Double) {
+            guard let first = points.first else { return }
+            var path = Path(); path.move(to:screen(first))
+            for point in points.dropFirst() { path.addLine(to:screen(point)) }
+            let depth = points.map { projection.projected($0).depth }.reduce(0,+)/Double(points.count)
+            parts.append(.init(path:path,depth:depth,white:white,width:CGFloat(width*scale)))
+        }
+        func polygon(_ points: [SkyDomeVector], white: Double, outline: Bool = false) {
+            guard let first = points.first else { return }
+            var path = Path(); path.move(to:screen(first))
+            for point in points.dropFirst() { path.addLine(to:screen(point)) }
+            path.closeSubpath()
+            let depth = points.map { projection.projected($0).depth }.reduce(0,+)/Double(points.count)
+            parts.append(.init(path:path,depth:depth,white:white,outline:outline))
+        }
+        func sphere(_ point: SkyDomeVector, radius: Double, white: Double, outline: Bool = true) {
+            let p = screen(point), r = CGFloat(radius*scale)
+            parts.append(.init(path:Path(ellipseIn:CGRect(x:p.x-r,y:p.y-r,width:r*2,height:r*2)),
+                               depth:projection.projected(point).depth,white:white,outline:outline))
+        }
+        let shadow = CGRect(x:center.x-CGFloat(scale*0.22),y:center.y-CGFloat(scale*0.055),
+                            width:CGFloat(scale*0.44),height:CGFloat(scale*0.11))
+        context.fill(Path(ellipseIn:shadow),with:.color(.black.opacity(0.75)))
+        for side in [-1.0,1.0] {
+            limb([pose.point(side:side*0.052,height:0.23),
+                  pose.point(side:side*0.065,forward:-0.015,height:0.115),
+                  pose.point(side:side*0.075,height:0.025)],width:0.059,white:0.70)
+            limb([pose.point(side:side*0.075,forward:-0.015,height:0.025),
+                  pose.point(side:side*0.075,forward:0.05,height:0.025)],width:0.052,white:0.82)
+            limb([pose.point(side:side*0.103,height:0.425),
+                  pose.point(side:side*0.15,forward:0.09,height:0.32),
+                  pose.point(side:side*0.055,forward:0.225,height:0.40)],width:0.047,white:0.84)
+            sphere(pose.point(side:side*0.055,forward:0.225,height:0.40),radius:0.027,white:0.95)
+        }
+        // An elliptical torso has real thickness, so a profile remains human.
+        for step in 0..<12 {
+            let a = Double(step) * .pi/6, b = Double(step+1) * .pi/6
+            polygon([pose.point(side:cos(a)*0.075,forward:sin(a)*0.045,height:0.20),
+                     pose.point(side:cos(b)*0.075,forward:sin(b)*0.045,height:0.20),
+                     pose.point(side:cos(b)*0.108,forward:sin(b)*0.058,height:0.425),
+                     pose.point(side:cos(a)*0.108,forward:sin(a)*0.058,height:0.425)],
+                    white:0.74+0.12*cos((a+b)/2))
+        }
+        limb([pose.point(height:0.415),pose.point(height:0.50)],width:0.058,white:0.84)
+        sphere(pose.point(height:0.555),radius:0.069,white:0.92)
+        let front = pose.forward.dot(projection.towardCamera)
+        if front > -0.15 {
+            // Nose and eyes distinguish the facing direction from a rear view.
+            sphere(pose.point(forward:0.064,height:0.548),radius:0.016,white:0.80,outline:false)
+            if front > 0.25 {
+                for side in [-1.0,1.0] {
+                    sphere(pose.point(side:side*0.023,forward:0.059,height:0.57),radius:0.006,white:0.20,outline:false)
+                }
+            }
+        }
+        func phone(_ side: Double,_ height: Double, frontOffset: Double = 0) -> SkyDomeVector {
+            // Upright iPhone, tipped 18 degrees toward the sky in both hands.
+            let tilt = 18.0 * .pi/180
+            return pose.point(side:side,forward:0.225-height*sin(tilt)+frontOffset,
+                              height:0.415+height*cos(tilt))
+        }
+        polygon([phone(-0.048,-0.078),phone(0.048,-0.078),phone(0.048,0.078),phone(-0.048,0.078)],
+                white:front > 0 ? 0.96:0.20,outline:true)
+        if front > 0.2 {
+            sphere(phone(-0.025,0.052,frontOffset:0.004),radius:0.008,white:0.14,outline:false)
+            sphere(phone(-0.025,0.026,frontOffset:0.004),radius:0.008,white:0.14,outline:false)
+        }
+        for part in parts.sorted(by:{ $0.depth < $1.depth }) {
+            if part.width > 0 {
+                context.stroke(part.path,with:.color(.black.opacity(0.85)),
+                               style:StrokeStyle(lineWidth:part.width+1.6,lineCap:.round,lineJoin:.round))
+                context.stroke(part.path,with:.color(Color(white:part.white)),
+                               style:StrokeStyle(lineWidth:part.width,lineCap:.round,lineJoin:.round))
+            } else {
+                context.fill(part.path,with:.color(Color(white:part.white)))
+                if part.outline { context.stroke(part.path,with:.color(.black.opacity(0.85)),lineWidth:0.8) }
+            }
+        }
     }
 }

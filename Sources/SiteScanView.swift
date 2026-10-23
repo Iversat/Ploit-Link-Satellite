@@ -1,5 +1,12 @@
 import SwiftUI
 
+private struct SkyCameraControlsPreference: PreferenceKey {
+    static let defaultValue: [String:CGRect] = [:]
+    static func reduce(value: inout [String:CGRect], nextValue: () -> [String:CGRect]) {
+        value.merge(nextValue(),uniquingKeysWith:{ _,new in new })
+    }
+}
+
 enum SkyScanPathRefresh {
     static func timeSlice(for pass: PassWindow?, at date: Date) -> Int {
         guard let pass, pass.contains(date) else { return 0 }
@@ -18,6 +25,7 @@ struct SiteScanView: View {
     @State private var followsPhone = false
     @State private var showPassPath = false
     @State private var starting = false
+    @State private var cameraControlBounds: [String:CGRect] = [:]
     @State private var path: [SkyDirection] = []
     @State private var pathMessage = "Рассчитываем путь пролёта…"
     @State private var captureTask: Task<Void,Never>?
@@ -62,7 +70,9 @@ struct SiteScanView: View {
             Color.black.ignoresSafeArea()
             if cameraScreen { cameraLayer.ignoresSafeArea(); cameraControls }
             else { VStack(spacing:0) { header; ScrollView { if screen == .result { resultContent } else { introduction } }.scrollIndicators(.hidden) } }
-        }.foregroundStyle(.white).tint(.white).preferredColorScheme(.dark)
+        }.coordinateSpace(name:"siteCamera")
+            .onPreferenceChange(SkyCameraControlsPreference.self) { cameraControlBounds = $0 }
+            .foregroundStyle(.white).tint(.white).preferredColorScheme(.dark)
             .sheet(isPresented:$information) { informationSheet }
             .task(id:pathKey) { await loadPath() }
             .onAppear {
@@ -144,7 +154,7 @@ struct SiteScanView: View {
                 Text("От точки старта").tag(false)
                 Text("Гироскоп").tag(true)
             }.pickerStyle(.segmented).accessibilityIdentifier("skyViewMode")
-            Text(followsPhone ? "Поворачивайте iPhone на месте — карта следует за направлением задней камеры." : "Карта ориентирована по началу сканирования. Вращайте пальцем, чтобы осмотреть другие стороны.")
+            Text(followsPhone ? "Поворачивайте iPhone на месте — карта следует за направлением задней камеры." : "Человек с телефоном смотрит к началу сканирования. Вращайте карту пальцем, чтобы осмотреть другие стороны.")
                 .font(.caption).foregroundStyle(.white.opacity(0.6)).frame(maxWidth:.infinity,alignment:.leading)
             HStack {
                 Label(scanOriginLabel,systemImage:"location.north")
@@ -188,16 +198,29 @@ struct SiteScanView: View {
     }
     private var cameraLayer: some View {
         GeometryReader { geometry in
+            let size = geometry.size
+            let origin = geometry.frame(in:.named("siteCamera")).origin
+            let area = cameraDotArea(size:size,origin:origin)
+            let viewport = CGRect(x:area.minX/max(1,size.width),y:area.minY/max(1,size.height),
+                                  width:area.width/max(1,size.width),height:area.height/max(1,size.height))
             ZStack {
                 if scan.running { SkyScanCamera(controller:scan) }
                 else { LinearGradient(colors:[Color(white:0.12),Color(white:0.025)],startPoint:.top,endPoint:.bottom) }
                 Canvas { context,size in
+                    context.clip(to:Path(area))
                     for target in scan.projectedTargets {
-                        if screen == .scanning && target.collected { continue }
+                        if screen == .scanning && target.collected && target.collectionProgress == nil { continue }
                         let point = CGPoint(x:target.x*size.width,y:target.y*size.height)
-                        let radius: CGFloat = screen == .inspecting ? 5:4
+                        if screen == .scanning, let progress = target.collectionProgress {
+                            let size = CGFloat(4*(1-progress))
+                            let ring = CGFloat(5+9*progress)
+                            context.fill(Path(ellipseIn:CGRect(x:point.x-size,y:point.y-size,width:size*2,height:size*2)),with:.color(.white.opacity(1-progress)))
+                            context.stroke(Path(ellipseIn:CGRect(x:point.x-ring,y:point.y-ring,width:ring*2,height:ring*2)),with:.color(.white.opacity(0.7*(1-progress))),lineWidth:1.2)
+                            continue
+                        }
+                        let radius: CGFloat = screen == .inspecting ? 5:CGFloat(4 * (1-0.25*target.dwellFraction))
                         let color: Color
-                        switch target.state {
+                        switch screen == .scanning ? .unknown : target.state {
                         case .blocked: color = Color(red:1,green:0.2,blue:0.26)
                         case .clear: color = .white
                         case .observed: color = .gray
@@ -205,7 +228,9 @@ struct SiteScanView: View {
                         }
                         context.fill(Path(ellipseIn:CGRect(x:point.x-radius,y:point.y-radius,width:radius*2,height:radius*2)),with:.color(color))
                         if screen == .scanning && target.dwellFraction > 0 {
-                            context.stroke(Path(ellipseIn:CGRect(x:point.x-8,y:point.y-8,width:16,height:16)),with:.color(.white.opacity(target.dwellFraction)),lineWidth:1)
+                            let ring = Path(ellipseIn:CGRect(x:point.x-8,y:point.y-8,width:16,height:16))
+                                .trimmedPath(from:0,to:target.dwellFraction)
+                            context.stroke(ring,with:.color(.white.opacity(0.8)),lineWidth:1.2)
                         }
                     }
                 }.allowsHitTesting(false).accessibilityElement(children:.ignore)
@@ -213,28 +238,40 @@ struct SiteScanView: View {
                     .accessibilityIdentifier("skyCaptureDots")
                 LinearGradient(colors:[.black.opacity(0.15),.clear,.black.opacity(0.65)],startPoint:.top,endPoint:.bottom).allowsHitTesting(false)
                 cameraAim(size:geometry.size)
-            }.frame(width:geometry.size.width,height:geometry.size.height)
+            }.frame(width:size.width,height:size.height)
+                .onChange(of:viewport,initial:true) { _,value in scan.collectionViewport = value }
+                .onChange(of:size,initial:true) { _,value in if preview { scan.setViewport(value) } }
         }
+    }
+    private func cameraDotArea(size: CGSize,origin: CGPoint) -> CGRect {
+        // Use the same visible rectangle for drawing and collecting: covered
+        // directions must not disappear or vibrate underneath the controls.
+        guard let topControls = cameraControlBounds["top"], let bottomControls = cameraControlBounds["bottom"] else { return .zero }
+        let top = min(size.height,max(0,topControls.maxY-origin.y+12))
+        let bottom = min(size.height,max(top,bottomControls.minY-origin.y-12))
+        return CGRect(x:12,y:top,width:max(0,size.width-24),height:max(0,bottom-top))
     }
     private var cameraControls: some View {
         VStack(spacing:0) {
-            header
-            HStack {
-                Spacer()
-                Button { scan.toggleTorch() } label: {
-                    Image(systemName:scan.isTorchOn ? "flashlight.on.fill":"flashlight.off.fill")
-                        .font(.system(size:18)).frame(width:46,height:46)
-                        .satelliteGlass(in:Circle(),interactive:true)
-                }.buttonStyle(.plain).disabled(!scan.torchAvailable)
-                    .accessibilityLabel(scan.isTorchOn ? "Выключить фонарик":"Включить фонарик")
-                    .accessibilityValue(scan.torchAvailable ? (scan.isTorchOn ? "Включён":"Выключен"):"Недоступен")
-                    .accessibilityIdentifier("scanTorch")
-            }.padding(.horizontal,20).padding(.top,10)
-            if preview { Text("Демонстрация · камера не используется").font(.caption2).padding(8).background(.black.opacity(0.4),in:Capsule()) }
+            VStack(spacing:0) {
+                header
+                HStack {
+                    if preview { Text("Демонстрация · камера не используется").font(.caption2).padding(8).background(.black.opacity(0.4),in:Capsule()) }
+                    Spacer(minLength:8)
+                    Button { scan.toggleTorch() } label: {
+                        Image(systemName:scan.isTorchOn ? "flashlight.on.fill":"flashlight.off.fill")
+                            .font(.system(size:18)).frame(width:46,height:46)
+                            .satelliteGlass(in:Circle(),interactive:true)
+                    }.buttonStyle(.plain).disabled(!scan.torchAvailable)
+                        .accessibilityLabel(scan.isTorchOn ? "Выключить фонарик":"Включить фонарик")
+                        .accessibilityValue(scan.torchAvailable ? (scan.isTorchOn ? "Включён":"Выключен"):"Недоступен")
+                        .accessibilityIdentifier("scanTorch")
+                }.padding(.horizontal,20).padding(.top,10)
+            }.background(cameraControlMeasurement("top"))
             Spacer(minLength:20)
             VStack(spacing:8) {
                 if let error = scan.torchError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading) }
-                HStack(alignment:.bottom) { Text(scan.message).font(.caption).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("scanStatus"); Spacer(minLength:12); cameraCompass }
+                HStack(alignment:.bottom) { Text(preview ? (screen == .inspecting ? "Сохранённые отметки в поле зрения":"Удерживайте точки в центральной области кадра") : scan.message).font(.caption).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("scanStatus"); Spacer(minLength:12); cameraCompass }
                 if screen == .scanning {
                     HStack(spacing:10) {
                         Button { scan.mark(.clear) } label: { Label("Небо",systemImage:"checkmark").frame(maxWidth:.infinity).frame(height:44).satelliteGlass(in:Capsule(),interactive:true) }.accessibilityIdentifier("markSkyClear")
@@ -242,7 +279,12 @@ struct SiteScanView: View {
                     }.font(.system(size:13,weight:.medium)).disabled(scan.direction == nil || !scan.running)
                 }
                 primary(screen == .inspecting ? "К карте":"Показать результат",id:"finishSiteScan") { captureTask?.cancel(); scan.finish(); screen = .result }
-            }.padding(.horizontal,20).padding(.vertical,12)
+            }.padding(.horizontal,20).padding(.vertical,12).background(cameraControlMeasurement("bottom"))
+        }
+    }
+    private func cameraControlMeasurement(_ key: String) -> some View {
+        GeometryReader { geometry in
+            Color.clear.preference(key:SkyCameraControlsPreference.self,value:[key:geometry.frame(in:.named("siteCamera"))])
         }
     }
     private func cameraAim(size: CGSize) -> some View {

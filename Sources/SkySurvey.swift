@@ -33,11 +33,14 @@ struct SkySurvey {
             sum + Self.rowAreas[index / Self.columns]
         }))
     }
-    mutating func collect(_ indices: Set<Int>) {
+    @discardableResult mutating func collect(_ indices: Set<Int>) -> Set<Int> {
+        var added = Set<Int>()
         for index in indices where cells.indices.contains(index) {
-            collectedCells.insert(index)
+            guard collectedCells.insert(index).inserted else { continue }
+            added.insert(index)
             if cells[index] == .unknown { cells[index] = .observed }
         }
+        return added
     }
 
     static func index(azimuth: Double, elevation: Double) -> Int? {

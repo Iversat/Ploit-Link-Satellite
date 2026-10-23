@@ -9,7 +9,19 @@ struct SkyScanTarget: Identifiable, Equatable {
     let state: SkyCellState
     let collected: Bool
     let dwellFraction: Double
-    var canCollect: Bool { (0.18...0.82).contains(x) && (0.18...0.82).contains(y) }
+    var collectionProgress: Double? = nil
+    var canCollect: Bool { SkyScanCollectionArea.central.contains(CGPoint(x:x,y:y)) }
+}
+
+enum SkyScanCollectionArea {
+    static let central = CGRect(x:0.18,y:0.18,width:0.64,height:0.64)
+    static func contains(_ point: CGPoint, visible: CGRect) -> Bool {
+        guard [visible.origin.x,visible.origin.y,visible.size.width,visible.size.height,point.x,point.y].allSatisfy(\.isFinite),
+              visible.size.width > 0, visible.size.height > 0 else { return false }
+        let area = central.intersection(visible)
+        guard !area.isNull, area.width >= 0.05, area.height >= 0.05 else { return false }
+        return area.contains(point)
+    }
 }
 
 /// Camera rays use ARKit's gravityAndHeading frame: east +X, up +Y, north −Z.
@@ -67,6 +79,49 @@ struct SkyScanDwell {
         return progress
     }
 }
+
+struct SkyScanCollectionAnimation {
+    static let duration = 0.32
+    private var collectedAt: [Int:TimeInterval] = [:]
+    mutating func reset() { collectedAt = [:] }
+    mutating func update(newIDs: Set<Int>, at time: TimeInterval, enabled: Bool) {
+        guard enabled, time.isFinite else { reset(); return }
+        collectedAt = collectedAt.filter { time >= $0.value && time-$0.value < Self.duration }
+        for id in newIDs where collectedAt[id] == nil { collectedAt[id] = time }
+    }
+    func progress(for id: Int, at time: TimeInterval) -> Double? {
+        guard let start = collectedAt[id], time.isFinite, time >= start, time-start < Self.duration else { return nil }
+        return (time-start)/Self.duration
+    }
+}
+
+#if DEBUG
+enum SkyScanPreviewGeometry {
+    static let direction = SkyDirection(azimuth:175,elevation:45)
+    static func projection(size: CGSize) -> SkyScanProjection {
+        let azimuth = Float(direction.azimuth * .pi / 180)
+        let forward = SkyScanProjection.worldDirection(direction)!
+        let right = SIMD3<Float>(cos(azimuth),0,sin(azimuth))
+        let up = simd_cross(right,forward)
+        // A representative portrait pinhole camera. Real scans always use the
+        // actual AR frame intrinsics and display transform, never these values.
+        let focal = Float(size.height)/(2*tan(Float.pi*66/360))
+        let intrinsics = simd_float3x3(SIMD3<Float>(focal,0,0),SIMD3<Float>(0,focal,0),
+                                       SIMD3<Float>(Float(size.width/2),Float(size.height/2),1))
+        return .init(cameraRotation:simd_float3x3(right,up,-forward),intrinsics:intrinsics,
+                     imageSize:size,imageToViewport:.identity)
+    }
+    static func targets(survey: SkySurvey, size: CGSize) -> [SkyScanTarget] {
+        guard size.width > 0, size.height > 0 else { return [] }
+        let projection = projection(size:size)
+        return survey.cells.indices.compactMap { index in
+            guard let point = projection.project(world:SkyScanProjection.targetDirections[index]) else { return nil }
+            return .init(id:index,x:Double(point.x),y:Double(point.y),state:survey.cells[index],
+                         collected:survey.collectedCells.contains(index),dwellFraction:0)
+        }
+    }
+}
+#endif
 
 
 struct SkyScanCollectionFeedback {
