@@ -1,6 +1,11 @@
 name: Site screens QA and unsigned IPA
 on:
   workflow_dispatch:
+    inputs:
+      extended_devices:
+        description: Capture additional iOS 18 and compact iPhone screens
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -49,11 +54,15 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests/SiteScanFlowTests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
-      - name: Capture site and home screens on three configurations
+      - name: Capture site and home screens
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        env:
+          EXTENDED_DEVICES: ${{ inputs.extended_devices }}
         run: |
           set -euo pipefail
-          for KIND in ios26-pro-max ios18-pro-max ios26-se; do
+          KINDS="ios26-pro-max"
+          if [ "$EXTENDED_DEVICES" = true ]; then KINDS="$KINDS ios18-pro-max ios26-se"; fi
+          for KIND in $KINDS; do
             if [ "$KIND" = ios26-pro-max ]; then
               DEVICE="$SITE_DEVICE"
               SCENES="home-day home-evening site-scan"

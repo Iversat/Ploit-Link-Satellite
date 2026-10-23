@@ -43,7 +43,9 @@ struct SiteScanView: View {
                     GlassPanel {
                         VStack(alignment:.leading,spacing:12) {
                             HStack { Text("Карта обзора").font(.headline); Spacer(); Text(model.satellite?.name ?? "Спутник").font(.caption).foregroundStyle(.secondary) }
-                            SkyDomeView(survey:scan.survey,path:path,direction:scan.direction).frame(height:235)
+                            SkyDomeView(survey:scan.survey,path:path,direction:scan.direction).frame(height:270)
+                            Text("Вращайте купол пальцем. Вверх и вниз — наклон.")
+                                .font(.caption).foregroundStyle(.secondary)
                             HStack(spacing:12) {
                                 legend("Открыто",color:.cyan)
                                 legend("Препятствие",color:.red)
@@ -160,42 +162,5 @@ struct SiteScanView: View {
             path = values
             pathMessage = "\(pass.riseDate.formatted(date:.abbreviated,time:.omitted)) · \(SessionText.interval(pass)) · оставшийся путь пролёта"
         } catch is CancellationError {} catch { pathMessage = "Путь не рассчитан. Обновите орбитальные данные." }
-    }
-}
-
-struct SkyDomeView: View {
-    let survey: SkySurvey
-    let path: [SkyDirection]
-    let direction: SkyDirection?
-    var body: some View {
-        Canvas { context, size in
-            let center = CGPoint(x:size.width/2,y:size.height/2), radius = min(size.width,size.height)/2 - 22
-            func point(_ direction: SkyDirection) -> CGPoint {
-                let r = radius * (90-min(90,max(0,direction.elevation)))/90, az = direction.azimuth * .pi/180
-                return CGPoint(x:center.x + CGFloat(sin(az))*r,y:center.y-CGFloat(cos(az))*r)
-            }
-            for fraction in [1.0, 2.0/3, 1.0/3] {
-                let r = radius*fraction
-                context.stroke(Path(ellipseIn:CGRect(x:center.x-r,y:center.y-r,width:2*r,height:2*r)),with:.color(.white.opacity(0.12)),lineWidth:1)
-            }
-            for index in survey.cells.indices {
-                let p = point(SkySurvey.direction(at:index)), state = survey.cells[index]
-                let color: Color = state == .blocked ? .red : state == .clear ? .cyan : .gray.opacity(state == .observed ? 0.65:0.25)
-                context.fill(Path(ellipseIn:CGRect(x:p.x-2.5,y:p.y-2.5,width:5,height:5)),with:.color(color))
-            }
-            if let first = path.first {
-                var line = Path(); line.move(to:point(first))
-                for value in path.dropFirst() { line.addLine(to:point(value)) }
-                context.stroke(line,with:.color(.yellow),style:StrokeStyle(lineWidth:2,lineCap:.round))
-            }
-            if let direction, direction.elevation >= 0 {
-                let p = point(direction)
-                context.stroke(Path(ellipseIn:CGRect(x:p.x-7,y:p.y-7,width:14,height:14)),with:.color(.white),lineWidth:2)
-            }
-            for (text,az) in [("С",0.0),("В",90.0),("Ю",180.0),("З",270.0)] {
-                let a = az * .pi/180
-                context.draw(Text(text).font(.caption.bold()).foregroundStyle(.secondary),at:CGPoint(x:center.x+CGFloat(sin(a))*(radius+15),y:center.y-CGFloat(cos(a))*(radius+15)))
-            }
-        }.accessibilityLabel("Карта обзора: голубой — отмеченное небо, красный — препятствия, серый — неизвестно, жёлтый — путь спутника")
     }
 }
