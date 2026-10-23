@@ -53,15 +53,27 @@ struct SatelliteGlassGroup<Content: View>: View {
 struct GlassPanel<Content: View>: View {
     var interactive = false
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         let panelContent = content.padding(20).frame(maxWidth: .infinity, alignment: .leading)
         if interactive {
             panelContent.satelliteGlass(in: shape, clear: true, interactive: true)
         } else {
-            // Decorative glass must not intercept touches intended for controls inside the panel.
+            // A material backdrop keeps embedded controls above the optical layer and receives no touches.
             panelContent.background {
-                Color.clear.satelliteGlass(in: shape, clear: true).allowsHitTesting(false)
+                Group {
+                    if reduceTransparency {
+                        shape.fill(Color(uiColor: .secondarySystemBackground))
+                            .overlay(shape.strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                    } else {
+                        shape.fill(.ultraThinMaterial)
+                            .background(.black.opacity(0.12), in: shape)
+                            .overlay(shape.strokeBorder(LinearGradient(
+                                colors: [.white.opacity(0.38), .white.opacity(0.07), .white.opacity(0.15)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.6))
+                    }
+                }.allowsHitTesting(false)
             }
         }
     }

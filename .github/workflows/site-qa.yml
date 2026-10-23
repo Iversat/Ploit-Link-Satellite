@@ -6,6 +6,10 @@ on:
         description: Capture visual gallery after tests (disable for focused regression checks)
         type: boolean
         default: true
+      record_interactions:
+        description: Record simulator interaction video for diagnosis
+        type: boolean
+        default: false
       extended_devices:
         description: Capture additional iOS 18 and compact iPhone screens
         type: boolean
@@ -54,14 +58,8 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
-      - name: Unit tests and application UI tests
-        run: |
-          set -euo pipefail
-          xcrun simctl io "$SITE_DEVICE" recordVideo --codec=h264 build/screenshots/site-interactions.mp4 &
-          RECORDING_PID=$!
-          trap 'kill -INT "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" || true' EXIT
-          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log
       - name: Capture site and home screens
+        id: visuals
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
           EXTENDED_DEVICES: ${{ inputs.extended_devices }}
@@ -100,8 +98,31 @@ jobs:
               xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-$SCENE.png"
             done
             xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
-            xcrun simctl shutdown "$DEVICE"
+            if [ "$DEVICE" != "$SITE_DEVICE" ] || [ "$EXTENDED_DEVICES" = true ]; then
+              xcrun simctl shutdown "$DEVICE"
+            fi
           done
+      - name: Upload visual gallery
+        if: ${{ !cancelled() && steps.visuals.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Visual-QA
+          path: build/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Unit tests and application UI tests
+        env:
+          RECORD_INTERACTIONS: ${{ inputs.record_interactions }}
+        run: |
+          set -euo pipefail
+          xcrun simctl boot "$SITE_DEVICE" || true
+          xcrun simctl bootstatus "$SITE_DEVICE" -b
+          if [ "$RECORD_INTERACTIONS" = true ]; then
+            xcrun simctl io "$SITE_DEVICE" recordVideo --codec=h264 build/screenshots/site-interactions.mp4 &
+            RECORDING_PID=$!
+            trap 'kill -INT "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" || true' EXIT
+          fi
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log | awk '/Test (Suite|Case)|Executed [0-9]+ tests|error:|failed|TEST (SUCCEEDED|FAILED)/ { print; fflush() }'
       - name: Export test attachments including weather controls
         if: always()
         run: |

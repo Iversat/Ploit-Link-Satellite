@@ -55,10 +55,39 @@ final class PointingFlowTests: XCTestCase {
         let title=app.staticTexts["pointingTitle"]
         XCTAssertEqual(title.label,"Тренировка")
         XCTAssertEqual(title.frame.midX,app.windows.firstMatch.frame.midX,accuracy:1,"Title must be centered on screen despite unequal buttons.")
-        app.segmentedControls["aimAxis"].buttons["Заднее стекло"].tap()
+        let picker=app.segmentedControls["aimAxis"]
+        let back=picker.buttons["Заднее стекло"], top=picker.buttons["Верхняя грань"]
+        func segmentState() -> String {
+            "top: selected=\(top.isSelected), hittable=\(top.isHittable), frame=\(top.frame); back: selected=\(back.isSelected), hittable=\(back.isHittable), frame=\(back.frame); status=\(status.label)"
+        }
+        func waitForStableSegment(_ segment:XCUIElement) {
+            var previous:CGRect?
+            var unchangedSince=Date()
+            let stable=XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+                guard segment.exists,segment.isHittable else { previous=nil; return false }
+                let frame=segment.frame
+                guard frame.width>0,frame.height>0,app.windows.firstMatch.frame.contains(frame) else { previous=nil; return false }
+                if previous != frame { previous=frame; unchangedSince=Date(); return false }
+                return Date().timeIntervalSince(unchangedSince)>=1
+            },object:nil)
+            XCTAssertEqual(XCTWaiter.wait(for:[stable],timeout:10),.completed,"Segment geometry must settle before a single tap. \(segmentState())")
+        }
+        func assertSelection(_ expected:XCUIElement,other:XCUIElement) {
+            let selected=expected.isSelected && !other.isSelected
+            if !selected {
+                let attachment=XCTAttachment(screenshot:XCUIScreen.main.screenshot())
+                attachment.name="axis-selection-failure"; attachment.lifetime = .keepAlways; add(attachment)
+            }
+            XCTAssertTrue(selected,"One tap must change the selected segment. \(segmentState())")
+        }
+        waitForStableSegment(back)
+        back.tap()
+        assertSelection(back,other:top)
         expectation(for:NSPredicate(format:"label != %@","НАПРАВЛЕНИЕ СОВПАЛО"),evaluatedWith:status)
         waitForExpectations(timeout:5)
-        app.segmentedControls["aimAxis"].buttons["Верхняя грань"].tap()
+        waitForStableSegment(top)
+        top.tap()
+        assertSelection(top,other:back)
         expectation(for:NSPredicate(format:"label == %@","НАПРАВЛЕНИЕ СОВПАЛО"),evaluatedWith:status)
         waitForExpectations(timeout:5)
     }
