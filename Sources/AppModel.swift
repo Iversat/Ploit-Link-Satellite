@@ -17,6 +17,9 @@ enum HomePanel: String, Identifiable {
     @Published var calculatingSessions = false
     @Published var orbitPresented = false
     @Published var homePanel: HomePanel?
+    private(set) var orbitInitialDate: Date?
+    private(set) var orbitInitialSatelliteID: Int?
+    private var orbitPending = false
     @Published var passes: [PassWindow] = []
     @Published var elements: Elements?
     @Published var error: String?
@@ -259,6 +262,21 @@ enum HomePanel: String, Identifiable {
         lastPrediction = .distantPast; passObserver = nil; look = nil; futureLook = nil; passes = []
         refreshSessions(force:true)
         Task { await tick() }
+    }
+    func prepareOrbit(date: Date? = nil, satelliteID: Int? = nil) {
+        orbitInitialDate = date
+        orbitInitialSatelliteID = satelliteID ?? selectedID
+        orbitPending = true
+    }
+    func presentPreparedOrbit() {
+        guard orbitPending else { return }
+        orbitPending = false
+        leavePointing()
+        orbitPresented = true
+    }
+    func openOrbits() {
+        prepareOrbit()
+        presentPreparedOrbit()
     }
     func enterPointing(training: Bool = false) { self.training = training; clearSkyConfirmed=false; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
     func leavePointing() { pointing = false; training = false; clearSkyConfirmed=false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }

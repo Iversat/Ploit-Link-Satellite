@@ -27,22 +27,23 @@ struct OrbitMotion {
     }
 }
 
-// A tiny locked value transfer; the render thread never calls JavaScript or SwiftUI.
-final class OrbitRenderFeed {
+// Playback and display-link callbacks are serialized on the main actor.
+@MainActor final class OrbitRenderFeed {
     struct Frame {
         var clock=OrbitClock(date:Date())
         var tracks: [Int:OrbitMotion]=[:]
-        var pathDates: [Int:Date]=[:]
-        var ground=false
         var active=true
+        var revision: UInt64=0
     }
-    private let lock=NSLock()
     private var frame=Frame()
-    func snapshot() -> Frame { lock.lock(); defer { lock.unlock() }; return frame }
-    func update(clock: OrbitClock,tracks: [Int:OrbitMotion],pathDates: [Int:Date]) {
-        lock.lock(); defer { lock.unlock() }
-        frame.clock=clock; frame.tracks=tracks; frame.pathDates=pathDates; frame.active=true
+    var onStop: (() -> Void)?
+    func snapshot() -> Frame { frame }
+    func update(clock: OrbitClock,tracks: [Int:OrbitMotion]) {
+        frame.clock=clock; frame.tracks=tracks; frame.active=true
+        frame.revision &+= 1
     }
-    func setGround(_ value: Bool) { lock.lock(); frame.ground=value; lock.unlock() }
-    func stop() { lock.lock(); frame.active=false; frame.tracks=[:]; lock.unlock() }
+    func stop() {
+        frame.active=false; frame.tracks=[:]
+        onStop?()
+    }
 }

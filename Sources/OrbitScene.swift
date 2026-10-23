@@ -10,18 +10,17 @@ final class GlobeSceneView: EarthRenderView {
 // rotate the previous mesh for a frame while SwiftUI is installing the new one.
 final class OrbitPathNode: SCNNode {
     let epoch: Date
-    let ground: Bool
-    init(geometry: SCNGeometry,epoch: Date,ground: Bool) {
-        self.epoch=epoch; self.ground=ground
+    init(geometry: SCNGeometry,epoch: Date) {
+        self.epoch=epoch
         super.init(); self.geometry=geometry
     }
     required init?(coder: NSCoder) {
-        epoch = .distantPast; ground=false
+        epoch = .distantPast
         super.init(coder:coder)
     }
 }
 
-struct OrbitScene: UIViewRepresentable {
+struct OrbitScene: UIViewRepresentable, Equatable {
     var states: [Int:OrbitalState]
     var paths: [Int:OrbitalTrajectory]
     var pathDates: [Int:Date]
@@ -29,13 +28,21 @@ struct OrbitScene: UIViewRepresentable {
     var labels: [Int:String]
     var selectedID: Int
     var showAll: Bool
-    var showGround: Bool
     var observer: Observer?
     var focus: Int
     var renderFeed: OrbitRenderFeed
     var contentInsets: UIEdgeInsets
     var onInteraction: (Bool)->Void
     var onSelect: (Int)->Void
+    // Moving positions come from the frame feed; they must not rebuild the scene
+    // when the timer, compass or a hidden home-screen value publishes a change.
+    static func == (lhs: Self,rhs: Self) -> Bool {
+        lhs.renderFeed === rhs.renderFeed && lhs.selectedID == rhs.selectedID &&
+        lhs.showAll == rhs.showAll && lhs.focus == rhs.focus && lhs.ids == rhs.ids &&
+        lhs.labels == rhs.labels && lhs.observer == rhs.observer &&
+        lhs.contentInsets == rhs.contentInsets && lhs.pathDates == rhs.pathDates &&
+        Set(lhs.states.keys) == Set(rhs.states.keys)
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
         let view=GlobeSceneView()
@@ -58,10 +65,15 @@ struct OrbitScene: UIViewRepresentable {
         let pitch=SCNNode(); pitch.name="latitudePivot"
         root.addChildNode(yaw); yaw.addChildNode(pitch); pitch.addChildNode(camera)
         StarField.add(to:root)
-        view.scene=scene; view.pointOfView=camera; view.isPlaying=true
-        view.rendersContinuously=true
+        view.scene=scene; view.pointOfView=camera
+        view.isPlaying=false; view.rendersContinuously=false
         context.coordinator.feed=renderFeed
         context.coordinator.view=view
+        context.coordinator.globe=globe
+        renderFeed.onStop = { [weak view] in
+            view?.stopFrameUpdates()
+            view?.isPlaying=false; view?.rendersContinuously=false
+        }
         view.startFrameUpdates { [weak coordinator=context.coordinator] in coordinator?.updateFrame() }
         context.coordinator.onInteraction=onInteraction
         view.layoutCamera = { [weak coordinator=context.coordinator] in coordinator?.applyCamera() }
@@ -103,6 +115,7 @@ struct OrbitScene: UIViewRepresentable {
                 label.constraints=[SCNBillboardConstraint()]; marker.addChildNode(label); root.addChildNode(marker)
             }
             marker.isHidden=false
+            coordinator.markers[id]=marker
             // The main-run-loop display link samples the buffered orbit every frame.
             // All scene mutation stays on the same thread as SwiftUI and gestures.
             if coordinator.positions[id] == nil {
@@ -126,19 +139,25 @@ struct OrbitScene: UIViewRepresentable {
                 plane.firstMaterial=material; label.geometry=plane
                 coordinator.labels[id]=labels[id]
             }
-            let key="\(id)-\(showGround)-\(pathDates[id]?.timeIntervalSince1970 ?? 0)-\(paths[id]?.orbit.first?.x ?? 0)-\(selectedID==id)"
+            let key="\(id)-\(pathDates[id]?.timeIntervalSince1970 ?? 0)"
+            if paths[id] == nil {
+                coordinator.orbitPaths.removeValue(forKey:id)?.removeFromParentNode()
+                coordinator.pathKeys[id]=nil
+            }
             if coordinator.pathKeys[id] != key, let path=paths[id] {
                 root.childNode(withName:pathName,recursively:false)?.removeFromParentNode()
-                let points=(showGround ? path.ground:path.orbit).map { SCNVector3($0.sceneX,$0.sceneY,$0.sceneZ) }
+                let points=path.orbit.map { SCNVector3($0.sceneX,$0.sceneY,$0.sceneZ) }
                 let indices=(0..<max(0,points.count-1)).flatMap { [Int32($0),Int32($0+1)] }
                 let geometry=SCNGeometry(sources:[SCNGeometrySource(vertices:points)],elements:[SCNGeometryElement(indices:indices,primitiveType:.line)])
-                let m=SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents=color.withAlphaComponent(selectedID==id ? 0.95:0.35)
+                let m=SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents=color
                 geometry.firstMaterial=m
-                let node=OrbitPathNode(geometry:geometry,epoch:pathDates[id] ?? Date(),ground:showGround)
+                let node=OrbitPathNode(geometry:geometry,epoch:pathDates[id] ?? Date())
                 node.name=pathName; root.addChildNode(node)
+                coordinator.orbitPaths[id]=node
                 coordinator.pathKeys[id]=key
             }
-            root.childNode(withName:pathName,recursively:false)?.isHidden=false
+            coordinator.orbitPaths[id]?.isHidden=false
+            coordinator.orbitPaths[id]?.opacity=selectedID==id ? 0.95:0.35
         }
         if let observer {
             let lat=observer.latitude*Double.pi/180,lon=observer.longitude*Double.pi/180
@@ -148,6 +167,9 @@ struct OrbitScene: UIViewRepresentable {
             node.name="observer"; node.geometry?.firstMaterial?.diffuse.contents=UIColor.systemGreen
             node.position=SCNVector3(p.sceneX,p.sceneY,p.sceneZ)
             if node.parent == nil { root.addChildNode(node) }
+            node.isHidden=false
+        } else {
+            root.childNode(withName:"observer",recursively:false)?.isHidden=true
         }
         if coordinator.lastFocus != focus || (!coordinator.didFocus && states[selectedID] != nil),
            let point=states[selectedID]?.position {
@@ -166,35 +188,51 @@ struct OrbitScene: UIViewRepresentable {
             coordinator.applyCamera()
             coordinator.lastFocus=focus; coordinator.didFocus=true
         }
+        coordinator.updateFrame(force:true)
         view.setNeedsDisplay()
     }
     static func dismantleUIView(_ view: SCNView,coordinator: Coordinator) {
         coordinator.feed?.stop()
+        coordinator.feed?.onStop=nil
         (view as? EarthRenderView)?.stopFrameUpdates()
         view.isPlaying=false; view.rendersContinuously=false; view.delegate=nil
         (view as? GlobeSceneView)?.layoutCamera=nil
         coordinator.onInteraction=nil; coordinator.onSelect=nil
-        // Release scene objects after rendering has stopped, not during a draw.
-        view.scene=nil
+        coordinator.markers=[:]; coordinator.orbitPaths=[:]
+        // SCNView releases its scene with the view, after the cover transition.
     }
     @MainActor final class Coordinator: NSObject {
         var feed: OrbitRenderFeed?
-        func updateFrame() {
+        weak var globe: SCNNode?
+        var markers: [Int:SCNNode]=[:]
+        var orbitPaths: [Int:OrbitPathNode]=[:]
+        private var lastFrameDate: Date?
+        private var lastRevision: UInt64?
+        private var lastLightingDate: Date?
+        private var cameraChanged=true
+        func updateFrame(force: Bool = false) {
             guard let frame=feed?.snapshot(),frame.active,
-                  let root=view?.scene?.rootNode,let camera=view?.pointOfView else { return }
+                  let view,let globe,let camera=view.pointOfView else { return }
             let date=frame.clock.value()
+            guard force || cameraChanged || date != lastFrameDate || lastRevision != frame.revision else { return }
+            lastFrameDate=date; lastRevision=frame.revision
             // Scene traversal and path replacement share the main run loop.
             SCNTransaction.begin(); SCNTransaction.disableActions=true
             defer { SCNTransaction.commit() }
             for (id,track) in frame.tracks {
-                if let state=track.state(at:date),let marker=root.childNode(withName:"sat-\(id)",recursively:false) {
+                if let marker=markers[id],!marker.isHidden,let state=track.state(at:date) {
                     marker.position=SCNVector3(state.position.sceneX,state.position.sceneY,state.position.sceneZ)
                 }
-                if let path=root.childNode(withName:"path-\(id)",recursively:false) as? OrbitPathNode {
-                    path.eulerAngles.y=path.ground ? 0 : Float(-SolarPosition.earthRate*date.timeIntervalSince(path.epoch))
+                if let path=orbitPaths[id],!path.isHidden {
+                    path.eulerAngles.y=Float(-SolarPosition.earthRate*date.timeIntervalSince(path.epoch))
                 }
             }
-            if let globe=root.childNode(withName:"earth",recursively:false) { EarthLighting.update(globe:globe,camera:camera,date:date) }
+            if force || cameraChanged || (lastLightingDate.map({abs(date.timeIntervalSince($0))>=1}) ?? true) {
+                EarthLighting.update(globe:globe,camera:camera,date:date,animated:false)
+                lastLightingDate=date
+            }
+            cameraChanged=false
+            view.setNeedsDisplay()
         }
         var onSelect: ((Int)->Void)?
         var lastFocus = -1
@@ -217,6 +255,8 @@ struct OrbitScene: UIViewRepresentable {
             node.position=SCNVector3(0,0,Float(framing.distance))
             node.camera?.projectionTransform=framing.projection
             SCNTransaction.commit()
+            cameraChanged=true
+            updateFrame()
             #if DEBUG
             view.accessibilityValue=String(format:"yaw %.1f pitch %.1f zoom %.2f center 0 0 insetTop %.1f insetBottom %.1f",camera.yaw,camera.pitch,camera.zoom,contentInsets.top,contentInsets.bottom)
             #endif

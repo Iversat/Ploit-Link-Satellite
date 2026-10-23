@@ -1,4 +1,5 @@
 import XCTest
+import SceneKit
 @testable import PloitSatellite
 
 final class OrbitRenderingTests: XCTestCase {
@@ -51,6 +52,100 @@ final class OrbitRenderingTests: XCTestCase {
         var a=track.samples[0],b=a; a.longitude=179; b.longitude = -179
         let wrap=OrbitMotion(start:date,step:5,samples:[a,b])
         XCTAssertEqual(abs(try XCTUnwrap(wrap.state(at:date.addingTimeInterval(2.5))).longitude),180,accuracy:0.001)
+    }
+    func testCancelledOrbitRequestsDoNotStartPropagation() async throws {
+        let engine=OrbitEngine()
+        // An invalid TLE proves cancellation is checked before entering JavaScript.
+        let invalid=Elements(norad:0,line1:"",line2:"",fetchedAt:Date())
+        for operation in 0..<5 {
+            let task=Task { () -> Bool in
+                withUnsafeCurrentTask { $0?.cancel() }
+                do {
+                    switch operation {
+                    case 0: _ = try await engine.look(elements:invalid,observer:.preview,date:Date())
+                    case 1: _ = try await engine.passes(elements:invalid,observer:.preview,date:Date(),minElevation:10)
+                    case 2: _ = try await engine.state(elements:invalid,date:Date())
+                    case 3: _ = try await engine.trajectory(elements:invalid,date:Date())
+                    default: _ = try await engine.motion(elements:invalid,date:Date(),seconds:3600)
+                    }
+                    return false
+                } catch is CancellationError { return true }
+                catch { return false }
+            }
+            let cancelled=await task.value
+            XCTAssertTrue(cancelled,"Operation \(operation) must reject a cancelled request before propagation")
+        }
+        let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))
+        let tle=try XCTUnwrap(JSONDecoder().decode([Elements].self,from:Data(contentsOf:url)).first)
+        let state=try await engine.state(elements:tle,date:try XCTUnwrap(tle.epoch))
+        XCTAssertTrue(state.altitudeKm.isFinite)
+        XCTAssertGreaterThan(state.altitudeKm,100)
+    }
+    @MainActor func testRenderFeedStopsImmediatelyAndCanRestart() {
+        let feed=OrbitRenderFeed(),date=Date(timeIntervalSince1970:1000)
+        let state=OrbitalState(position:OrbitPoint(x:7000,y:0,z:0),latitude:0,longitude:0,altitudeKm:622,periodSeconds:5400)
+        let motion=OrbitMotion(start:date,step:5,samples:[state,state])
+        feed.update(clock:OrbitClock(date:date),tracks:[25544:motion])
+        var stopped=false
+        feed.onStop = {
+            XCTAssertFalse(feed.snapshot().active)
+            XCTAssertTrue(feed.snapshot().tracks.isEmpty)
+            stopped=true
+        }
+        feed.stop()
+        XCTAssertTrue(stopped,"Closing must stop rendering synchronously, before cover dismissal")
+        feed.update(clock:OrbitClock(date:date),tracks:[25544:motion])
+        XCTAssertTrue(feed.snapshot().active)
+        XCTAssertEqual(feed.snapshot().tracks.count,1)
+    }
+    @MainActor func testSceneEqualitySkipsMotionButPreservesVisibleChanges() {
+        let date=Date(timeIntervalSince1970:1000),feed=OrbitRenderFeed()
+        let state=OrbitalState(position:OrbitPoint(x:7000,y:0,z:0),latitude:0,longitude:0,altitudeKm:622,periodSeconds:5400)
+        let scene=OrbitScene(states:[25544:state],paths:[:],pathDates:[:],ids:[25544],labels:[25544:"ISS"],
+                             selectedID:25544,showAll:true,observer:.preview,focus:0,renderFeed:feed,
+                             contentInsets:.zero,onInteraction:{ _ in },onSelect:{ _ in })
+        var moved=scene
+        moved.states[25544]?.position=OrbitPoint(x:6990,y:100,z:200)
+        XCTAssertTrue(scene == moved,"The display-link feed updates positions without rebuilding the SwiftUI scene")
+        let changes: [(inout OrbitScene)->Void] = [
+            { $0.selectedID=59112 }, { $0.showAll=false }, { $0.focus=1 },
+            { $0.ids.append(59112) }, { $0.labels[25544]="ISS\n12:00–12:04" },
+            { $0.observer=nil }, { $0.contentInsets.top=80 },
+            { $0.pathDates[25544]=date }, { $0.states=[:] }, { $0.renderFeed=OrbitRenderFeed() }
+        ]
+        for (index,change) in changes.enumerated() {
+            var changed=scene; change(&changed)
+            XCTAssertFalse(scene == changed,"Visible change \(index) must reach the SceneKit view")
+        }
+    }
+    @MainActor func testPausedSceneAcceptsRevisedMotionAtSameDateAndStopsAdvancing() {
+        let date=Date(timeIntervalSince1970:1000),feed=OrbitRenderFeed()
+        let view=SCNView(),scene=SCNScene(),globe=SCNNode(),camera=SCNNode(),marker=SCNNode()
+        camera.camera=SCNCamera()
+        scene.rootNode.addChildNode(globe); scene.rootNode.addChildNode(camera); scene.rootNode.addChildNode(marker)
+        view.scene=scene; view.pointOfView=camera
+        let coordinator=OrbitScene.Coordinator()
+        coordinator.view=view; coordinator.globe=globe; coordinator.feed=feed; coordinator.markers[25544]=marker
+        let a=OrbitalState(position:OrbitPoint(x:7000,y:0,z:0),latitude:0,longitude:0,altitudeKm:622,periodSeconds:5400)
+        var b=a; b.position=OrbitPoint(x:6900,y:1000,z:200)
+        feed.update(clock:OrbitClock(date:date),tracks:[25544:OrbitMotion(start:date,step:5,samples:[a,a])])
+        coordinator.updateFrame()
+        XCTAssertEqual(marker.position.x,a.position.sceneX,accuracy:0.000001)
+        feed.update(clock:OrbitClock(date:date),tracks:[25544:OrbitMotion(start:date,step:5,samples:[b,b])])
+        coordinator.updateFrame()
+        XCTAssertEqual(marker.position.x,b.position.sceneX,accuracy:0.000001)
+        XCTAssertEqual(marker.position.y,b.position.sceneY,accuracy:0.000001)
+        // A moving clock samples inside the same five-second buffer.
+        let clock=OrbitClock(date:date,uptime:ProcessInfo.processInfo.systemUptime-5,rate:1,limit:date.addingTimeInterval(2.5))
+        feed.update(clock:clock,tracks:[25544:OrbitMotion(start:date,step:5,samples:[a,b])])
+        coordinator.updateFrame()
+        XCTAssertEqual(marker.position.x,(a.position.sceneX+b.position.sceneX)/2,accuracy:0.000001)
+        feed.stop()
+        marker.position=SCNVector3(10,20,30)
+        coordinator.updateFrame(force:true)
+        XCTAssertEqual(marker.position.x,10)
+        XCTAssertEqual(marker.position.y,20)
+        XCTAssertEqual(marker.position.z,30)
     }
     @MainActor func testStopInvalidatesPendingResultsAndReopenWorks() async throws {
         let url=try XCTUnwrap(Bundle.main.url(forResource:"seed-tle",withExtension:"json"))

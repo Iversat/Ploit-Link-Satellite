@@ -4,7 +4,6 @@ import Combine
 @MainActor final class OrbitPlayback: ObservableObject {
     @Published var selectedID = 25544
     @Published var showAll = true
-    @Published var showGround = false { didSet { renderFeed.setGround(showGround) } }
     @Published var date = Date()
     @Published var live = true
     @Published var playing = false
@@ -23,17 +22,21 @@ import Combine
     private var tracks: [Int:OrbitMotion]=[:]
     private let engine=OrbitEngine()
     private var calculation: Task<Void,Never>?
+    private var scrubTask: Task<Void,Never>?
     private var requestID=UUID()
     var offset: Double { date.timeIntervalSince(anchor) }
     var visibleIDs: [Int] { showAll ? elements.keys.sorted() : [selectedID] }
     private var rate: Double { interacting || !active ? 0 : live ? 1 : playing ? speed : 0 }
-    private func publishClock() { renderFeed.update(clock:clock,tracks:tracks,pathDates:pathDates) }
+    private func publishClock() { renderFeed.update(clock:clock,tracks:tracks) }
     private func reanchor(at value: Date? = nil) {
         date=value ?? clock.value()
         clock=OrbitClock(date:date,rate:rate,limit:anchor.addingTimeInterval(48*3600))
         if active { publishClock() }
     }
-    private func cancelCalculation() { requestID=UUID(); calculation?.cancel(); calculation=nil }
+    private func cancelCalculation() {
+        requestID=UUID(); calculation?.cancel(); calculation=nil
+        scrubTask?.cancel(); scrubTask=nil
+    }
     func setInteracting(_ value: Bool) {
         guard active,interacting != value else { return }
         let current=clock.value(); interacting=value
@@ -55,9 +58,15 @@ import Combine
         guard active else { return }
         live=false; playing=false; cancelCalculation()
         reanchor(at:anchor.addingTimeInterval(min(48*3600,max(-6*3600,offset))))
-        states=[:]; calculate()
+        // Coalesce slider events; only the most recent position needs SGP4.
+        scrubTask=Task {
+            do { try await Task.sleep(nanoseconds:80_000_000) } catch { return }
+            guard !Task.isCancelled,active else { return }
+            scrubTask=nil; calculate()
+        }
     }
-    func jump(to date: Date) { scrub(date.timeIntervalSince(anchor)) }
+    func finishScrubbing() { scrubTask?.cancel(); scrubTask=nil; calculate() }
+    func jump(to date: Date) { scrub(date.timeIntervalSince(anchor)); finishScrubbing() }
     func now() {
         guard active else { return }
         cancelCalculation(); live=true; playing=false; anchor=Date(); reanchor(at:anchor); calculate()
@@ -67,13 +76,13 @@ import Combine
         let current=clock.value(); live=false; playing.toggle(); reanchor(at:current); calculate()
     }
     func pulse() {
-        guard active,!interacting else { return }
+        guard active,!interacting,scrubTask == nil else { return }
         date=clock.value()
         if offset>=48*3600,playing { playing=false; reanchor(at:date) }
         calculate()
     }
     func calculate() {
-        guard active,!interacting else { return }
+        guard active,!interacting,scrubTask == nil else { return }
         let instant=clock.value(),ids=visibleIDs
         let available=Dictionary(uniqueKeysWithValues:ids.compactMap { id in tracks[id]?.state(at:instant).map { (id,$0) } })
         if !available.isEmpty { states=available }
@@ -119,10 +128,12 @@ enum OrbitPalette {
 struct OrbitExplorerView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     @Binding var isPresented: Bool
     @StateObject private var playback=OrbitPlayback()
     @State private var headerHeight: CGFloat=64
     @State private var controlsHeight: CGFloat=350
+    @State private var closing=false
     var initialDate: Date? = nil
     var initialSatelliteID: Int? = nil
     private let timer=Timer.publish(every:0.5,on:.main,in:.common).autoconnect()
@@ -139,13 +150,13 @@ struct OrbitExplorerView: View {
             ZStack {
                 OrbitScene(states:playback.states,paths:playback.paths,pathDates:playback.pathDates,
                            ids:model.satellites.map(\.id),labels:labels,selectedID:playback.selectedID,
-                           showAll:playback.showAll,showGround:playback.showGround,
+                           showAll:playback.showAll,
                            observer:model.observer,focus:playback.focus,renderFeed:playback.renderFeed,
                            contentInsets:UIEdgeInsets(top:geometry.safeAreaInsets.top+headerHeight+8,left:0,
                                                       bottom:geometry.safeAreaInsets.bottom+controlsHeight+8,right:0),
                            onInteraction:playback.setInteracting) { id in
                     playback.selectedID=id; playback.calculate()
-                }.ignoresSafeArea().accessibilityIdentifier("orbitScene")
+                }.equatable().ignoresSafeArea().accessibilityIdentifier("orbitScene")
                 // Only the panels receive touches; empty space still rotates the globe.
                 VStack(spacing:0) {
                     header.padding(.top,6).padding(.bottom,8)
@@ -208,10 +219,20 @@ struct OrbitExplorerView: View {
             Button { playback.focus+=1 } label: {
                 Image(systemName:"viewfinder").font(.system(size:20)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
             }.buttonStyle(.plain).accessibilityLabel("Найти выбранный спутник").accessibilityIdentifier("focusOrbit")
-            Button { playback.stop(); isPresented=false } label: {
-                Image(systemName:"xmark").font(.system(size:17,weight:.medium)).frame(width:44,height:44).satelliteGlass(in:Circle(),interactive:true)
+            Button(action:close) {
+                Image(systemName:"xmark").font(.system(size:17,weight:.medium))
+                    .frame(width:48,height:48).contentShape(Rectangle())
+                    .background { Circle().fill(.clear).satelliteGlass(in:Circle()).allowsHitTesting(false) }
             }.buttonStyle(.plain).accessibilityLabel("Закрыть орбиты").accessibilityIdentifier("closeOrbits")
         }.foregroundStyle(.white).padding(.horizontal,22)
+    }
+    private func close() {
+        guard !closing else { return }
+        closing=true
+        // Stop the frame loop before the cover starts its dismissal animation.
+        playback.stop()
+        isPresented=false
+        dismiss()
     }
     private func controls(compact: Bool) -> some View {
         VStack(alignment:.leading,spacing:compact ? 10:14) {
@@ -264,7 +285,8 @@ struct OrbitExplorerView: View {
                 Text(model.observer == nil ? "Задайте геопозицию для расчёта сеансов" : "В выбранное время сеансов за 48 ч нет").font(.system(size:12)).foregroundStyle(.secondary)
             }
             VStack(spacing:4) {
-                Slider(value:Binding(get:{playback.offset},set:{playback.scrub($0)}),in:-6*3600...48*3600)
+                Slider(value:Binding(get:{playback.offset},set:{playback.scrub($0)}),in:-6*3600...48*3600,
+                       onEditingChanged:{ if !$0 { playback.finishScrubbing() } })
                     .tint(.white).accessibilityLabel("Перемотка времени").accessibilityIdentifier("orbitTimeline")
                 HStack { Text("−6 ч");Spacer();Text("Перемотка времени");Spacer();Text("+48 ч") }.font(.system(size:10)).foregroundStyle(.white.opacity(0.45))
             }
@@ -275,7 +297,6 @@ struct OrbitExplorerView: View {
                     ForEach([1.0,60,300],id:\.self) { speed in Button("×\(Int(speed))") { playback.speed=speed } }
                 } label: { Text("×\(Int(playback.speed))").font(.system(size:13,weight:.medium)).monospacedDigit() }.accessibilityIdentifier("orbitSpeed")
                 Spacer()
-                Button { playback.showGround.toggle() } label: { Text(playback.showGround ? "Трасса":"Орбита").font(.system(size:13,weight:.medium)) }.accessibilityIdentifier("toggleGroundTrack")
                 Button { playback.now() } label: { Text("Сейчас").font(.system(size:13,weight:.semibold)).padding(.horizontal,14).frame(height:34).background(.white.opacity(0.12),in:Capsule()) }.accessibilityIdentifier("orbitNow")
             }.buttonStyle(.plain)
             Text("Влево/вправо — вращение вокруг оси. Вверх/вниз — наклон. Двумя пальцами — масштаб.")

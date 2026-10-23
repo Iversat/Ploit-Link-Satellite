@@ -162,7 +162,7 @@ struct PointingContent: View {
                 }.frame(width:size.width).frame(minHeight:geometry.size.height,alignment:.top)
             }.scrollIndicators(.hidden).scrollBounceBehavior(.basedOnSize)
         }
-        .sheet(item:$sheet) { panel in
+        .sheet(item:$sheet, onDismiss:model.presentPreparedOrbit) { panel in
             switch panel {
             case .satellites: SatellitePicker().environmentObject(model)
             case .passes: PassesView().environmentObject(model)

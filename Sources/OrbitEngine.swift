@@ -36,27 +36,35 @@ actor OrbitEngine {
         return js
     }
     func look(elements: Elements, observer: Observer, date: Date) throws -> Look {
+        try Task.checkCancellation()
         let js = try prepare(elements)
         guard let json = js.objectForKeyedSubscript("lookJSON")?.call(withArguments: [date.timeIntervalSince1970 * 1000, observer.latitude, observer.longitude, observer.altitudeM])?.toString(),
               js.exception == nil, let data = json.data(using: .utf8), let result = try? JSONDecoder().decode(Look.self, from: data) else { throw OrbitError.propagation }
+        try Task.checkCancellation()
         return result
     }
     func passes(elements: Elements, observer: Observer, date: Date, minElevation: Double) throws -> [PassWindow] {
+        try Task.checkCancellation()
         let js = try prepare(elements)
         guard let json = js.objectForKeyedSubscript("passesJSON")?.call(withArguments: [date.timeIntervalSince1970 * 1000, observer.latitude, observer.longitude, observer.altitudeM, minElevation])?.toString(),
               js.exception == nil, let data = json.data(using: .utf8) else { throw OrbitError.propagation }
+        try Task.checkCancellation()
         return try JSONDecoder().decode([PassWindow].self, from: data)
     }
     func state(elements: Elements, date: Date) throws -> OrbitalState {
+        try Task.checkCancellation()
         let js=try prepare(elements)
         guard let json=js.objectForKeyedSubscript("stateJSON")?.call(withArguments:[date.timeIntervalSince1970*1000])?.toString(),
               js.exception == nil, let data=json.data(using:.utf8) else { throw OrbitError.propagation }
+        try Task.checkCancellation()
         return try JSONDecoder().decode(OrbitalState.self,from:data)
     }
     func trajectory(elements: Elements, date: Date) throws -> OrbitalTrajectory {
+        try Task.checkCancellation()
         let js=try prepare(elements)
         guard let json=js.objectForKeyedSubscript("trajectoryJSON")?.call(withArguments:[date.timeIntervalSince1970*1000])?.toString(),
               js.exception == nil, let data=json.data(using:.utf8) else { throw OrbitError.propagation }
+        try Task.checkCancellation()
         return try JSONDecoder().decode(OrbitalTrajectory.self,from:data)
     }
     func motion(elements: Elements,date: Date,seconds: Double) throws -> OrbitMotion {

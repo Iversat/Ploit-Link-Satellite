@@ -26,7 +26,7 @@ struct AssistantView: View {
             ZStack {
                 (model.pointing && model.pointingStyle == .radar ? Color(red:0.025,green:0.03,blue:0.04) : Color.black).ignoresSafeArea()
                 if !model.pointing || model.pointingStyle == .earth {
-                    EarthView(latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
+                    EarthView(active: !model.orbitPresented,latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
                     LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
                 }
                 if model.pointing { PointingView() } else {
@@ -56,7 +56,7 @@ struct AssistantView: View {
                             HStack(spacing: 12) {
                                 smallButton("Спутники",icon:"globe.europe.africa.fill") { model.homePanel = .satellites }
                                 smallButton("Пролёты",icon:"clock.arrow.circlepath") { model.homePanel = .passes }
-                                smallButton("Орбиты",icon:"globe") { model.orbitPresented = true }
+                                smallButton("Орбиты",icon:"globe") { model.openOrbits() }
                             }
                         }
                         }
@@ -73,14 +73,18 @@ struct AssistantView: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.35),value: model.pointing)
         }
-        .sheet(item: $model.homePanel) { item in
+        .sheet(item: $model.homePanel, onDismiss: model.presentPreparedOrbit) { item in
             switch item {
             case .satellites: SatellitePicker().environmentObject(model)
             case .passes: PassesView().environmentObject(model)
             case .settings: SettingsView().environmentObject(model)
             }
         }
-        .fullScreenCover(isPresented:$model.orbitPresented) { OrbitExplorerView(isPresented:$model.orbitPresented).environmentObject(model) }
+        .fullScreenCover(isPresented:$model.orbitPresented) {
+            OrbitExplorerView(isPresented:$model.orbitPresented,
+                              initialDate:model.orbitInitialDate,
+                              initialSatelliteID:model.orbitInitialSatelliteID).environmentObject(model)
+        }
     }
     private var status: some View {
         GlassPanel {

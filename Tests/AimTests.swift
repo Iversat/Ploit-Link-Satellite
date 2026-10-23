@@ -216,7 +216,7 @@ final class AimTests: XCTestCase {
         let path=try await engine.trajectory(elements:entry,date:date)
         XCTAssertEqual(state.latitude,look.latitude,accuracy:0.000001)
         XCTAssertEqual(state.longitude,look.longitude,accuracy:0.000001)
-        XCTAssertEqual(path.orbit.count,121); XCTAssertEqual(path.ground.count,121)
+        XCTAssertEqual(path.orbit.count,121)
         XCTAssertEqual(path.orbit[60].x,state.position.x,accuracy:0.00001)
         XCTAssertEqual(path.orbit[60].y,state.position.y,accuracy:0.00001)
         let greenwich=OrbitPoint(x:6378.137,y:0,z:0)

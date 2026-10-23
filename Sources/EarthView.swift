@@ -2,6 +2,7 @@ import SwiftUI
 import SceneKit
 
 struct EarthView: UIViewRepresentable {
+    var active=true
     var latitude: Double = 35
     var longitude: Double = 35
     private var lightingDate: Date {
@@ -14,6 +15,7 @@ struct EarthView: UIViewRepresentable {
     }
     final class Coordinator: NSObject {
         var latitude: Double?; var longitude: Double?
+        var lastLightingDate=Date.distantPast
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> SCNView {
@@ -59,14 +61,18 @@ struct EarthView: UIViewRepresentable {
         view.isPlaying=false; view.delegate=nil; view.scene=nil
     }
     func updateUIView(_ uiView: SCNView, context: Context) {
+        guard active else { return }
         // The mostly static home backdrop needs no second continuous frame loop.
         // Update its sunlight with the regular model refresh, on the main thread.
-        if let globe=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=uiView.pointOfView {
+        let date=lightingDate
+        if abs(date.timeIntervalSince(context.coordinator.lastLightingDate))>=1,
+           let globe=uiView.scene?.rootNode.childNode(withName:"earth",recursively:false),let camera=uiView.pointOfView {
             SCNTransaction.begin(); SCNTransaction.disableActions=true
-            EarthLighting.update(globe:globe,camera:camera,date:lightingDate)
+            EarthLighting.update(globe:globe,camera:camera,date:date)
             SCNTransaction.commit()
+            context.coordinator.lastLightingDate=date
+            uiView.setNeedsDisplay()
         }
-        uiView.setNeedsDisplay()
         let previous=context.coordinator
         if let lat=previous.latitude, let lon=previous.longitude,
            abs(lat-latitude)<0.01, abs(AimMath.wrap(lon-longitude))<0.01 { return }

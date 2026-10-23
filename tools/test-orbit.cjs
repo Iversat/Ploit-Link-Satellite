@@ -26,9 +26,10 @@ for(const s of seeds){
     assert(error<0.05,`Interpolation error ${error} km`);
   }
   assert(Math.abs(state.latitude-look.latitude)<1e-8 && Math.abs(state.longitude-look.longitude)<1e-8);
-  assert(track.orbit.length===121 && track.ground.length===121);
+  assert.equal(track.orbit.length,121);
+  assert.deepEqual(Object.keys(track),['orbit']);
   assert(Math.hypot(track.orbit[60].x-state.position.x,track.orbit[60].y-state.position.y,track.orbit[60].z-state.position.z)<1e-6);
-  for(const p of [...track.orbit,...track.ground]) assert(Object.values(p).every(Number.isFinite));
+  for(const p of track.orbit) assert(Object.values(p).every(Number.isFinite));
   assert(Math.abs(ctx.stateAt(date+60000).longitude-state.longitude)>0.01);
   const passes=JSON.parse(ctx.passesJSON(date,48.708,44.513,100,10));
   for(const p of passes){

@@ -131,7 +131,8 @@ final class PointingFlowTests: XCTestCase {
         XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
         app.buttons["playOrbit"].tap()
         app.buttons["toggleAllSatellites"].tap()
-        app.buttons["toggleGroundTrack"].tap()
+        XCTAssertFalse(app.buttons["toggleGroundTrack"].exists)
+        XCTAssertFalse(app.buttons["Трасса"].exists)
         app.buttons["focusOrbit"].tap()
         app.buttons["orbitNow"].tap()
         XCTAssertTrue(mode.label.contains("СЕЙЧАС"))
@@ -139,15 +140,90 @@ final class PointingFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
     }
     func testCloseOrbitFromCatalogueAndReopen() {
-        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-catalogue"]; app.launch()
-        let open=app.buttons["Орбиты спутников"]
-        XCTAssertTrue(open.waitForExistence(timeout:10)); open.tap()
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()
+        XCTAssertTrue(app.buttons["openSatellites"].waitForExistence(timeout:10))
+        app.buttons["openSatellites"].tap()
+        let open=app.buttons["catalogueOrbits"]
+        XCTAssertTrue(open.waitForExistence(timeout:5)); open.tap()
         let close=app.buttons["closeOrbits"]
         XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
-        XCTAssertTrue(app.navigationBars["Спутники"].waitForExistence(timeout:5))
-        open.tap(); XCTAssertTrue(close.waitForExistence(timeout:5)); close.tap()
-        app.buttons["Готово"].tap()
         XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.navigationBars["Спутники"].exists,"The orbit close button must return to the main menu from every entry point.")
+        app.buttons["openOrbits"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout:5)); close.tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
+        app.buttons["openSettings"].tap()
+        XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout:3))
+    }
+    func testCloseFromHomeWhileLivePlayingAndScrubbing() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()
+        XCTAssertTrue(app.buttons["openOrbits"].waitForExistence(timeout:10))
+        for mode in 0..<3 {
+            app.buttons["openOrbits"].tap()
+            let close=app.buttons["closeOrbits"]
+            XCTAssertTrue(close.waitForExistence(timeout:10))
+            XCTAssertTrue(app.descendants(matching:.any)["orbitCoordinates"].waitForExistence(timeout:15))
+            XCTAssertFalse(app.buttons["toggleGroundTrack"].exists)
+            if mode == 1 {
+                app.buttons["orbitSpeed"].tap()
+                app.buttons["×300"].firstMatch.tap()
+                app.buttons["playOrbit"].tap()
+                XCTAssertEqual(app.buttons["playOrbit"].label,"Пауза")
+                let date=app.staticTexts["orbitDate"],before=date.label
+                let changes=expectation(for:NSPredicate(format:"label != %@",before),evaluatedWith:date)
+                XCTAssertEqual(XCTWaiter.wait(for:[changes],timeout:4),.completed)
+            } else if mode == 2 {
+                let scene=app.otherElements["orbitScene"]
+                scene.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.3)).press(forDuration:0.05,thenDragTo:scene.coordinate(withNormalizedOffset:CGVector(dx:0.25,dy:0.3)))
+                app.sliders["orbitTimeline"].adjust(toNormalizedSliderPosition:0.72)
+            }
+            // Exercise the full hit target, including the edges outside the glyph.
+            close.coordinate(withNormalizedOffset:CGVector(dx:mode == 1 ? 0.88:0.12,dy:0.5)).tap()
+            XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:3),"Close failed in orbit mode \(mode)")
+            XCTAssertFalse(close.exists)
+            app.buttons["openSettings"].tap()
+            XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout:3))
+            app.buttons["closeSettings"].tap()
+            XCTAssertTrue(app.buttons["openOrbits"].waitForExistence(timeout:3))
+        }
+    }
+    func testPassOrbitPreviewReturnsHomeAndPreservesForecastDate() throws {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-home-settings-stress"]; app.launch()
+        XCTAssertTrue(app.buttons["openPasses"].waitForExistence(timeout:10))
+        app.buttons["openPasses"].tap()
+        let preview=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","previewPass-")).firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout:30))
+        let rise=try XCTUnwrap(Double(preview.identifier.replacingOccurrences(of:"previewPass-",with:"")))
+        let formatter=DateFormatter(); formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent; formatter.dateFormat="d MMM · HH:mm:ss"
+        let expectedDate=formatter.string(from:Date(timeIntervalSince1970:rise))
+        preview.tap()
+        let close=app.buttons["closeOrbits"]
+        XCTAssertTrue(close.waitForExistence(timeout:10))
+        let mode=app.descendants(matching:.any)["orbitTimeMode"]
+        let forecast=expectation(for:NSPredicate(format:"label CONTAINS %@","ПРОГНОЗ"),evaluatedWith:mode)
+        XCTAssertEqual(XCTWaiter.wait(for:[forecast],timeout:5),.completed)
+        XCTAssertEqual(app.staticTexts["orbitDate"].label,expectedDate)
+        close.tap()
+        XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.navigationBars["Пролёты"].exists)
+        app.buttons["openPasses"].tap()
+        XCTAssertTrue(app.buttons["passesOrbits"].waitForExistence(timeout:5))
+        app.buttons["passesOrbits"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout:10))
+        close.tap()
+        XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+    }
+    func testOrbitOpenedFromPointingReturnsHome() {
+        let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-earth-unavailable"]; app.launch()
+        XCTAssertTrue(app.buttons["earthPasses"].waitForExistence(timeout:10))
+        app.buttons["earthPasses"].tap()
+        XCTAssertTrue(app.buttons["passesOrbits"].waitForExistence(timeout:5))
+        app.buttons["passesOrbits"].tap()
+        XCTAssertTrue(app.buttons["closeOrbits"].waitForExistence(timeout:10))
+        app.buttons["closeOrbits"].tap()
+        XCTAssertTrue(app.buttons["startPointing"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.buttons["finishPointing"].exists)
     }
     func testCloseWhilePlaying300AfterDragAndScrubRepeatedly() {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-orbits-playback"]; app.launch()

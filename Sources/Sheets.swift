@@ -4,7 +4,6 @@ struct SatellitePicker: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @State private var query = ""
-    @State private var showOrbits = false
     var body: some View {
         NavigationStack {
             List {
@@ -44,20 +43,17 @@ struct SatellitePicker: View {
                 }
             }.navigationTitle("Спутники").searchable(text:$query,prompt:"Название спутника")
                 .toolbar {
-                    ToolbarItem(placement:.topBarLeading) { Button { showOrbits=true } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников") }
+                    ToolbarItem(placement:.topBarLeading) { Button { model.prepareOrbit(); dismiss() } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников").accessibilityIdentifier("catalogueOrbits") }
                     ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } }
                 }
         }.tint(.white).presentationDragIndicator(.visible)
             .task { model.refreshSessions() }
-            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(isPresented:$showOrbits).environmentObject(model) }
     }
 }
 
 struct PassesView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    @State private var showOrbits = false
-    @State private var orbitDate: Date?
     var body: some View {
         NavigationStack {
             List {
@@ -75,7 +71,7 @@ struct PassesView: View {
                         VStack(alignment:.leading,spacing:8) {
                             HStack { Text(pass.contains(model.clock) ? "Сейчас над горизонтом" : pass.riseDate.formatted(.dateTime.day().month(.abbreviated))).font(.headline);Spacer();Text("↗ \(Int(pass.maxElevation))°").foregroundStyle(.green) }
                             HStack { Text(pass.riseDate.formatted(date:.omitted,time:.shortened));Image(systemName:"arrow.right").font(.caption).foregroundStyle(.secondary);Text(pass.setDate.formatted(date:.omitted,time:.shortened));Spacer();Text("\(Int((pass.set-pass.rise)/60)) мин").foregroundStyle(.secondary) }.font(.system(.body,design:.rounded)).monospacedDigit()
-                            Button { orbitDate=pass.riseDate; showOrbits=true } label: { Label("Посмотреть пролёт на орбите",systemImage:"globe") }.font(.system(size:13)).padding(.top,3).accessibilityIdentifier("previewPass-\(pass.id)")
+                            Button { model.prepareOrbit(date:pass.riseDate); dismiss() } label: { Label("Посмотреть пролёт на орбите",systemImage:"globe") }.font(.system(size:13)).padding(.top,3).accessibilityIdentifier("previewPass-\(pass.id)")
                         }.padding(.vertical,5)
                     }
                 }
@@ -90,11 +86,10 @@ struct PassesView: View {
                 }
             }.navigationTitle("Пролёты")
                 .toolbar {
-                    ToolbarItem(placement:.topBarLeading) { Button { orbitDate=nil; showOrbits=true } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников") }
+                    ToolbarItem(placement:.topBarLeading) { Button { model.prepareOrbit(); dismiss() } label: { Image(systemName:"globe") }.accessibilityLabel("Орбиты спутников").accessibilityIdentifier("passesOrbits") }
                     ToolbarItem(placement:.topBarTrailing) { Button("Готово") { dismiss() } }
                 }
         }.tint(.white).presentationDragIndicator(.visible)
-            .fullScreenCover(isPresented:$showOrbits) { OrbitExplorerView(isPresented:$showOrbits,initialDate:orbitDate,initialSatelliteID:model.selectedID).environmentObject(model) }
     }
 }
 
@@ -141,7 +136,7 @@ struct SettingsView: View {
                     Text("Тренировка использует условную цель 135° / 45°, а не реальный спутник.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("О приложении") {
-                    Text("Ploit Space · 1.3.7").fontWeight(.medium)
+                    Text("Ploit Space · 1.3.8").fontWeight(.medium)
                     Text("Визуальный помощник для внешнего радиоустройства. Не измеряет спутниковый сигнал и не передаёт сообщения встроенным модемом iPhone.").font(.footnote).foregroundStyle(.secondary)
                     Text("Приложение создано независимо от Apple. Иллюстрация Земли: NASA Earth Observatory, Black Marble 2016. Орбиты: satellite.js (MIT), CelesTrak.").font(.caption).foregroundStyle(.secondary)
                     Link("Данные и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Satellite-iOS")!)

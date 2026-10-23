@@ -130,7 +130,6 @@ struct OrbitalState: Codable {
 }
 struct OrbitalTrajectory: Codable {
     var orbit: [OrbitPoint]
-    var ground: [OrbitPoint]
 }
 
 struct TrackingMotion {

@@ -73,15 +73,20 @@ class EarthRenderView: SCNView {
     private var onFrame: (() -> Void)?
     private var powerObserver: NSObjectProtocol?
     private var thermalObserver: NSObjectProtocol?
+    private var activityObservers: [NSObjectProtocol]=[]
     func startFrameUpdates(_ action: @escaping () -> Void) {
         stopFrameUpdates(); onFrame=action
         let target=EarthFrameTarget(self)
         let link=CADisplayLink(target:target,selector:#selector(EarthFrameTarget.tick))
         frameLink=link; updateFrameRate()
+        updateFrameActivity()
         link.add(to:.main,forMode:.common)
     }
     func stopFrameUpdates() { frameLink?.invalidate(); frameLink=nil; onFrame=nil }
     fileprivate func advanceFrame() { onFrame?() }
+    private func updateFrameActivity() {
+        frameLink?.isPaused=window == nil || UIApplication.shared.applicationState != .active
+    }
     static func targetFPS(maximum: Int,lowPower: Bool,thermal: ProcessInfo.ThermalState) -> Int {
         if lowPower || thermal == .serious || thermal == .critical { return 30 }
         return maximum>=120 ? 120:60
@@ -97,14 +102,20 @@ class EarthRenderView: SCNView {
         // Match the display instead of stretching a 2x render target on 3x phones.
         contentScaleFactor=window?.screen.nativeScale ?? UIScreen.main.nativeScale
         updateFrameRate()
+        updateFrameActivity()
         if powerObserver == nil {
             powerObserver=NotificationCenter.default.addObserver(forName:.NSProcessInfoPowerStateDidChange,object:nil,queue:.main) { [weak self] _ in self?.updateFrameRate() }
             thermalObserver=NotificationCenter.default.addObserver(forName:ProcessInfo.thermalStateDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.updateFrameRate() }
+            activityObservers=[UIApplication.didBecomeActiveNotification,UIApplication.didEnterBackgroundNotification].map { name in
+                NotificationCenter.default.addObserver(forName:name,object:nil,queue:.main) { [weak self] _ in self?.updateFrameActivity() }
+            }
+            activityObservers.append(NotificationCenter.default.addObserver(forName:UIApplication.willResignActiveNotification,object:nil,queue:.main) { [weak self] _ in self?.frameLink?.isPaused=true })
         }
     }
     deinit {
         frameLink?.invalidate()
         if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
         if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
+        for observer in activityObservers { NotificationCenter.default.removeObserver(observer) }
     }
 }

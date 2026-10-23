@@ -41,11 +41,11 @@ enum EarthLighting {
         """]
         material.setValue(NSValue(scnVector3:SCNVector3(0,0,1)),forKey:"sunDirection")
     }
-    static func update(globe: SCNNode,camera: SCNNode,date: Date) {
+    static func update(globe: SCNNode,camera: SCNNode,date: Date,animated: Bool = true) {
         let sun=SolarPosition.direction(at:date)
         let local=SCNVector3(Float(sun.y),Float(sun.z),Float(sun.x))
-        let world=globe.presentation.convertVector(local,to:nil)
-        let eye=camera.presentation.convertVector(world,from:nil)
+        let world=(animated ? globe.presentation:globe).convertVector(local,to:nil)
+        let eye=(animated ? camera.presentation:camera).convertVector(world,from:nil)
         globe.geometry?.firstMaterial?.setValue(NSValue(scnVector3:eye),forKey:"sunDirection")
     }
 }

@@ -39,17 +39,14 @@ function motionJSON(ms,seconds,step) {
   return JSON.stringify(samples);
 }
 function trajectoryJSON(ms) {
-  var state=stateAt(ms),period=state.periodSeconds*1000,gmst=satellite.gstime(new Date(ms)),orbit=[],ground=[];
+  var state=stateAt(ms),period=state.periodSeconds*1000,gmst=satellite.gstime(new Date(ms)),orbit=[];
   for(var i=0;i<=120;i++) {
     var t=ms+(i/120-0.5)*period,date=new Date(t),pv=satellite.propagate(currentSatrec,date);
     if(!pv || !pv.position || currentSatrec.error) throw new Error('SGP4 unavailable');
     // Instantaneous orbit in the Earth's frame at the displayed time.
     orbit.push(satellite.eciToEcf(pv.position,gmst));
-    // Ground track uses Earth's actual rotation at each sample time.
-    var geo=satellite.eciToGeodetic(pv.position,satellite.gstime(date));
-    ground.push(satellite.geodeticToEcf({latitude:geo.latitude,longitude:geo.longitude,height:12}));
   }
-  return JSON.stringify({orbit:orbit,ground:ground});
+  return JSON.stringify({orbit:orbit});
 }
 function passesJSON(ms,lat,lon,alt,mask) {
   // 48 h, 15 s coarse scan + 0.25 s crossing bisection; a mask-defined RF window.
