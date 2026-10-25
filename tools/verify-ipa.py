@@ -104,8 +104,17 @@ def verify_ipa(path):
         for key in ("NSLocationWhenInUseUsageDescription", "NSMotionUsageDescription"):
             require(isinstance(plist.get(key), str) and plist[key].strip(), "Missing usage description: " + key)
         require(plist.get("CADisableMinimumFrameDurationOnPhone") is True, "Missing ProMotion configuration")
+        version = tuple(int(part) for part in str(plist.get("CFBundleShortVersionString", "0")).split("."))
+        sky_model = any(name.startswith(prefix + "SkyScene.mlmodelc/") for name in files)
+        if version >= (1, 7, 0):
+            require(sky_model, "Missing compiled on-device SkyScene model")
+            require(any(name.startswith(prefix + "SkyScene.mlmodelc/") and archive.getinfo(name).file_size > 1_000_000
+                        for name in files), "Compiled SkyScene model is missing its weights")
+            require(isinstance(plist.get("NSCameraUsageDescription"), str), "Missing camera usage description")
+            require(prefix + "MMSegmentation-Apache-2.0.txt" in files, "Missing model license")
         return {"ipa_verified": True, "bundle": plist["CFBundleIdentifier"], "version": plist.get("CFBundleShortVersionString"),
-                "executable_bytes": len(binary), "platform": "arm64 iOS device", "crc_verified": True, "signed": bool(signed)}
+                "executable_bytes": len(binary), "platform": "arm64 iOS device", "crc_verified": True,
+                "sky_model_bundled": sky_model, "signed": bool(signed)}
 
 
 if __name__ == "__main__":

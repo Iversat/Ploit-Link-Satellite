@@ -9,3 +9,5 @@ xcuserdata/
 node_modules/
 tools/private-*
 __pycache__/
+Tests/ModelFixtures/
+build-model-env/

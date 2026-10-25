@@ -1,6 +1,6 @@
 import Foundation
 
-enum SkyCellState: Int { case unknown, observed, clear, blocked }
+enum SkyCellState: Int { case unknown, observed, clear, blocked, opening }
 
 struct SkyDirection: Equatable {
     var azimuth: Double
@@ -21,6 +21,7 @@ struct SkySurvey {
     // Coverage records camera dwell, independently of an open/blocked classification.
     private(set) var collectedCells: Set<Int> = []
     private var hits = Array(repeating: 0, count: SkySurvey.columns * SkySurvey.rows)
+    private var analysisVotes = Array(repeating:SkyAnalysisVote(),count:SkySurvey.columns * SkySurvey.rows)
 
     var coveredCellCount: Int { collectedCells.count }
     var hasRecordedData: Bool { !collectedCells.isEmpty || cells.contains(where: { $0 != .unknown }) }
@@ -61,13 +62,25 @@ struct SkySurvey {
         }
     }
     mutating func mark(_ direction: SkyDirection, state: SkyCellState) {
-        guard (state == .clear || state == .blocked), Self.index(azimuth:direction.azimuth,elevation:direction.elevation) != nil else { return }
+        guard (state == .clear || state == .blocked || state == .opening), Self.index(azimuth:direction.azimuth,elevation:direction.elevation) != nil else { return }
         for index in cells.indices {
             let cell = Self.direction(at:index)
             if AimMath.separation(az1:direction.azimuth, el1:direction.elevation, az2:cell.azimuth, el2:cell.elevation) <= 12 {
                 // A depth obstacle must be rescanned, never erased by a broad clear-sky mark.
                 if state == .blocked || cells[index] != .blocked { cells[index] = state }
             }
+        }
+    }
+    mutating func applyAnalysis(index: Int, state: SkyCellState, timestamp: TimeInterval) {
+        guard cells.indices.contains(index) else { return }
+        if cells[index] == .unknown { cells[index] = .observed }
+        guard analysisVotes[index].accept(state,at:timestamp) else { return }
+        if state == .blocked || cells[index] != .blocked { cells[index] = state }
+    }
+    mutating func restrictOpenSkyToApertures() {
+        for index in cells.indices where cells[index] == .clear {
+            cells[index] = .opening
+            analysisVotes[index] = SkyAnalysisVote()
         }
     }
     #if DEBUG
@@ -80,6 +93,9 @@ struct SkySurvey {
             if direction.azimuth > 220 && direction.azimuth < 290 && direction.elevation < 55 {
                 result.cells[index] = .blocked
             }
+            if direction.azimuth > 75 && direction.azimuth < 105 && direction.elevation > 20 && direction.elevation < 42 {
+                result.cells[index] = .opening
+            }
         }
         result.collect(Set(result.cells.indices.filter { Self.direction(at:$0).azimuth < 180 }))
         return result
@@ -87,13 +103,14 @@ struct SkySurvey {
     #endif
     func assessment(path: [SkyDirection]) -> SkyAssessment {
         guard !path.isEmpty else { return .init(total:0, clear:0, blocked:0) }
-        var clear = 0, blocked = 0
+        var clear = 0, blocked = 0, opening = 0
         for direction in path {
             guard let index = Self.index(azimuth:direction.azimuth, elevation:direction.elevation) else { continue }
             if cells[index] == .clear { clear += 1 }
             if cells[index] == .blocked { blocked += 1 }
+            if cells[index] == .opening { opening += 1 }
         }
-        return .init(total:path.count, clear:clear, blocked:blocked)
+        return .init(total:path.count, clear:clear, blocked:blocked, opening:opening)
     }
 }
 
@@ -101,15 +118,18 @@ struct SkyAssessment {
     var total: Int
     var clear: Int
     var blocked: Int
-    var unknown: Int { max(0,total - clear - blocked) }
+    var opening: Int = 0
+    var unknown: Int { max(0,total - clear - blocked - opening) }
     var title: String {
         if total == 0 { return "Нужен прогноз пролёта" }
         if blocked > 0 { return "На пути есть препятствия" }
+        if opening > 0 { return "Есть возможный просвет" }
         if unknown > 0 { return "Обзор ещё не проверен" }
-        return "Путь отмечен открытым"
+        return "Видимых препятствий не найдено"
     }
     var detail: String {
         guard total > 0 else { return "Выберите спутник с ближайшим сеансом и актуальными данными орбиты." }
-        return "Открыто \(Int(Double(clear) / Double(total) * 100))% · препятствия \(Int(Double(blocked) / Double(total) * 100))% · не проверено \(Int(Double(unknown) / Double(total) * 100))% пути"
+        let aperture = opening > 0 ? " · просвет \(Int(Double(opening) / Double(total) * 100))%":""
+        return "Открыто \(Int(Double(clear) / Double(total) * 100))% · препятствия \(Int(Double(blocked) / Double(total) * 100))%\(aperture) · не проверено \(Int(Double(unknown) / Double(total) * 100))% пути"
     }
 }

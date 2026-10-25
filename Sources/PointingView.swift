@@ -304,12 +304,14 @@ struct EarthAimBeacon: View {
         GeometryReader { geometry in
             let x = max(-70,min(70,bearing*1.2))
             ZStack {
-                Ellipse().fill(RadialGradient(colors:[pointingGreen.opacity(aligned ? 0.25:0.07),.clear],center:.center,startRadius:0,endRadius:55)).frame(width:100,height:100).offset(y:10)
-                Capsule().fill(LinearGradient(colors:[.cyan.opacity(0.2),pointingGreen.opacity(aligned ? 0.25:0.04),.clear],startPoint:.top,endPoint:.bottom)).frame(width:18,height:geometry.size.height*0.62).blur(radius:10).offset(x:x*0.5,y:-10)
-                if available { SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).shadow(color:.white.opacity(0.6),radius:9).offset(x:x,y:-geometry.size.height*0.30) }
-                Circle().fill(aligned ? pointingGreen:.white.opacity(0.65)).frame(width:19,height:19).overlay(Circle().stroke(.white,lineWidth:4).frame(width:27,height:27)).offset(y:geometry.size.height*0.33)
+                if available {
+                    Ellipse().fill(RadialGradient(colors:[pointingGreen.opacity(aligned ? 0.25:0.07),.clear],center:.center,startRadius:0,endRadius:55)).frame(width:100,height:100).offset(y:10)
+                    Capsule().fill(LinearGradient(colors:[.cyan.opacity(0.2),pointingGreen.opacity(aligned ? 0.25:0.04),.clear],startPoint:.top,endPoint:.bottom)).frame(width:18,height:geometry.size.height*0.62).blur(radius:10).offset(x:x*0.5,y:-10)
+                    SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).shadow(color:.white.opacity(0.6),radius:9).offset(x:x,y:-geometry.size.height*0.30)
+                }
+                Circle().fill(available && aligned ? pointingGreen:.white.opacity(0.65)).frame(width:19,height:19).overlay(Circle().stroke(.white,lineWidth:4).frame(width:27,height:27)).offset(y:geometry.size.height*0.33)
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
-        }.animation(reduceMotion ? nil : .easeOut(duration:0.2),value:bearing)
+        }.animation(reduceMotion ? nil : .easeOut(duration:0.2),value:bearing).allowsHitTesting(false)
     }
 }
 

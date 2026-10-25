@@ -72,6 +72,15 @@ enum SkyScanLocation {
     @Published private(set) var torchAvailable = false
     @Published private(set) var isTorchOn = false
     @Published private(set) var torchError: String?
+    @Published var environment: SkyScanEnvironment = .automatic {
+        didSet {
+            sceneEnvironment = environmentEstimate.resolved(selection:environment)
+            if sceneEnvironment != .outdoors { survey.restrictOpenSkyToApertures() }
+        }
+    }
+    @Published private(set) var analysisStatus = "ИИ анализирует изображение на iPhone"
+    @Published private(set) var analysedFrames = 0
+    @Published private(set) var sceneEnvironment: SkyScanEnvironment = .automatic
     var coveredTargetCount: Int { survey.coveredCellCount }
     let totalTargetCount = SkySurvey.columns * SkySurvey.rows
     var headingReady = false
@@ -93,6 +102,11 @@ enum SkyScanLocation {
     private var feedback = SkyScanCollectionFeedback()
     private var collectionAnimation = SkyScanCollectionAnimation()
     private var collectionHaptic: UIImpactFeedbackGenerator?
+    private let classifier = SkySceneClassifier()
+    private var analysisTask: Task<Void,Never>?
+    private var lastAnalysis: TimeInterval = 0
+    private var environmentEstimate = SkySceneEnvironmentEstimate()
+    private var analysisEpoch = UUID()
 
     init(torch: SkyScanTorchControlling? = nil) {
         self.torch = torch ?? SystemSkyScanTorch()
@@ -132,6 +146,9 @@ enum SkyScanLocation {
         if collecting {
             survey = SkySurvey(); coverageFraction = 0; origin = nil; moved = false
             scanObserver = observer; isSnapshot = false; startAzimuth = nil
+            analysedFrames = 0; environmentEstimate = SkySceneEnvironmentEstimate()
+            sceneEnvironment = environment; lastAnalysis = 0
+            analysisStatus = "Подготовка ИИ на устройстве…"
         }
         feedback.reset(); collectionAnimation.reset()
         collectionHaptic = collecting ? UIImpactFeedbackGenerator(style:.soft):nil
@@ -148,6 +165,8 @@ enum SkyScanLocation {
     }
     func stop() {
         startToken = UUID(); running = false; direction = nil; collecting = false
+        analysisTask?.cancel(); analysisTask = nil
+        analysisEpoch = UUID()
         collectionViewport = .zero
         requestTorch(false); session.pause()
         projectedTargets = []; dwell.reset(); feedback.reset(); collectionAnimation.reset(); collectionHaptic = nil
@@ -158,6 +177,8 @@ enum SkyScanLocation {
     }
     func invalidate(_ reason: String) {
         stop(); survey = SkySurvey(); coverageFraction = 0; startAzimuth = nil; isSnapshot = false; scanObserver = nil; origin = nil; message = reason
+        analysedFrames = 0; environmentEstimate = SkySceneEnvironmentEstimate(); sceneEnvironment = .automatic
+        analysisStatus = "Для анализа начните новое сканирование"
     }
     func checkLocation(_ observer: Observer?) {
         guard !isPreview else { return }
@@ -166,7 +187,7 @@ enum SkyScanLocation {
     }
     func mark(_ state: SkyCellState) {
         guard running, collecting, !moved, let direction, headingReady || isPreview else { return }
-        survey.mark(direction,state:state)
+        survey.mark(direction,state:state == .clear && sceneEnvironment != .outdoors ? .opening:state)
     }
     func toggleTorch() {
         guard running, !isPreview, !torchChanging, torch.available || torch.isOn else { return }
@@ -203,10 +224,12 @@ enum SkyScanLocation {
             lastTorchRefresh = frame.timestamp; refreshTorchState()
         }
         guard case .normal = frame.camera.trackingState else {
+            analysisEpoch = UUID()
             direction = nil; projectedTargets = []; dwell.reset()
             message = "Медленно поверните телефон: камера уточняет положение."; return
         }
         guard headingReady else {
+            analysisEpoch = UUID()
             direction = nil; projectedTargets = []; dwell.reset()
             message = "Нужен точный компас: отойдите от металла и разрешите геопозицию."; return
         }
@@ -256,43 +279,91 @@ enum SkyScanLocation {
             self.direction = nil
             if sampleDue { message = "Поднимите камеру выше горизонта." }
         }
-        if collecting, sampleDue, let depth = frame.sceneDepth, let confidence = depth.confidenceMap {
-            let map = depth.depthMap
-            CVPixelBufferLockBaseAddress(map,.readOnly); CVPixelBufferLockBaseAddress(confidence,.readOnly)
-            defer { CVPixelBufferUnlockBaseAddress(map,.readOnly); CVPixelBufferUnlockBaseAddress(confidence,.readOnly) }
-            if let base = CVPixelBufferGetBaseAddress(map), let quality = CVPixelBufferGetBaseAddress(confidence) {
-                let width = CVPixelBufferGetWidth(map), height = CVPixelBufferGetHeight(map)
-                let stride = CVPixelBufferGetBytesPerRow(map) / MemoryLayout<Float32>.size
-                let qualityStride = CVPixelBufferGetBytesPerRow(confidence)
-                let values = base.assumingMemoryBound(to:Float32.self), confidenceValues = quality.assumingMemoryBound(to:UInt8.self)
-                let intrinsics = frame.camera.intrinsics, resolution = frame.camera.imageResolution
-                var blockedCellsThisFrame = Set<Int>()
-                for row in 1...5 { for column in 1...5 {
-                    let x = column * width / 6, y = row * height / 6
-                    let px = Float(x) * Float(resolution.width) / Float(width)
-                    let py = Float(y) * Float(resolution.height) / Float(height)
-                    let ray = SIMD4<Float>((px-intrinsics.columns.2.x)/intrinsics.columns.0.x,
-                                           -(py-intrinsics.columns.2.y)/intrinsics.columns.1.y, -1, 0)
-                    let world = transform * ray
-                    let sample = Self.skyDirection(SIMD3<Float>(world.x,world.y,world.z))
-                    let distance = Double(values[y*stride+x] * simd_length(SIMD3<Float>(ray.x,ray.y,ray.z)))
-                    var newConfidentSample = false
-                    if confidenceValues[y*qualityStride+x] == UInt8(ARConfidenceLevel.high.rawValue), distance.isFinite, (0.2...6).contains(distance),
-                       let cell = SkySurvey.index(azimuth:sample.azimuth,elevation:sample.elevation) {
-                        newConfidentSample = blockedCellsThisFrame.insert(cell).inserted
-                    }
-                    result.observe(sample,obstacleDistance:distance,highConfidence:newConfidentSample)
-                } }
-            }
-        }
-        if collecting && (!newlyCollected.isEmpty || (sampleDue && frame.sceneDepth != nil)) {
+        if collecting && !newlyCollected.isEmpty {
             survey = result
             if coverageFraction != result.coverageFraction { coverageFraction = result.coverageFraction }
         }
+        analyse(frame:frame,rotation:cameraRotation)
         projectedTargets = visible.map { index,point in
             SkyScanTarget(id:index,x:Double(point.x),y:Double(point.y),state:result.cells[index],
                           collected:result.collectedCells.contains(index),dwellFraction:progress[index] ?? 0,
                           collectionProgress:collectionAnimation.progress(for:index,at:frame.timestamp))
+        }
+    }
+    private func analyse(frame: ARFrame, rotation: simd_float3x3) {
+        guard collecting, !isPreview, analysisTask == nil, frame.timestamp-lastAnalysis >= 0.65 else { return }
+        lastAnalysis = frame.timestamp
+        let token = startToken, epoch = analysisEpoch, timestamp = frame.timestamp
+        let pixelBuffer = frame.capturedImage
+        // These rays and depth samples belong to the SAME frame as the image.
+        // Later phone rotations must never move an old inference to a new direction.
+        let rays = Self.analysisRays(frame:frame,rotation:rotation)
+        let classifier = self.classifier
+        analysisTask = Task { [weak self] in
+            defer { if let self, self.startToken == token { self.analysisTask = nil } }
+            do {
+                let classification = try await classifier.classify(pixelBuffer)
+                guard !Task.isCancelled, let self, self.startToken == token, self.analysisEpoch == epoch,
+                      self.running, self.collecting, !self.moved, self.headingReady else { return }
+                self.environmentEstimate.update(indoorEvidence:classification.indoorEvidence)
+                self.sceneEnvironment = self.environmentEstimate.resolved(selection:self.environment)
+                var updated = self.survey
+                if self.sceneEnvironment != .outdoors { updated.restrictOpenSkyToApertures() }
+                for ray in rays {
+                    let sample = classification.sample(rawX:ray.rawX,rawY:ray.rawY)
+                    let state = SkySceneFusion.state(sample:sample,distance:ray.distance,depthReliable:ray.depthReliable,
+                                                     environment:self.sceneEnvironment)
+                    updated.applyAnalysis(index:ray.index,state:state,timestamp:timestamp)
+                }
+                self.survey = updated; self.analysedFrames += 1
+                let mode: String
+                switch self.sceneEnvironment {
+                case .automatic: mode = "Уточняем обстановку"
+                case .outdoors: mode = "Улица"
+                case .indoors: mode = "Помещение · окна как возможные просветы"
+                }
+                self.analysisStatus = "ИИ · \(mode) · \(self.supportsDepth ? "камера + LiDAR":"камера")"
+            } catch {
+                guard !Task.isCancelled, let self, self.startToken == token, self.analysisEpoch == epoch, self.running else { return }
+                // Depth still contributes when a model is unavailable. Never replace
+                // failed ML with a colour heuristic claiming to recognize the sky.
+                var updated = self.survey
+                for ray in rays where ray.depthReliable {
+                    if let distance = ray.distance, distance.isFinite, (0.2...6).contains(distance) {
+                        updated.applyAnalysis(index:ray.index,state:.blocked,timestamp:timestamp)
+                    }
+                }
+                self.survey = updated
+                self.analysisStatus = "ИИ недоступен · отметьте небо и препятствия вручную"
+            }
+        }
+    }
+    private static func analysisRays(frame: ARFrame, rotation: simd_float3x3) -> [SkyAnalysisRay] {
+        let intrinsics = frame.camera.intrinsics, resolution = frame.camera.imageResolution
+        let projection = SkyScanProjection(cameraRotation:rotation,intrinsics:intrinsics,imageSize:resolution,imageToViewport:.identity)
+        let map = frame.sceneDepth?.depthMap, confidence = frame.sceneDepth?.confidenceMap
+        if let map { CVPixelBufferLockBaseAddress(map,.readOnly) }
+        if let confidence { CVPixelBufferLockBaseAddress(confidence,.readOnly) }
+        defer {
+            if let map { CVPixelBufferUnlockBaseAddress(map,.readOnly) }
+            if let confidence { CVPixelBufferUnlockBaseAddress(confidence,.readOnly) }
+        }
+        return SkyScanProjection.targetDirections.enumerated().compactMap { index,world in
+            guard let point = projection.project(world:world) else { return nil }
+            var distance: Double?, reliable = false
+            if let map, let confidence,
+               let depthBase = CVPixelBufferGetBaseAddress(map), let qualityBase = CVPixelBufferGetBaseAddress(confidence) {
+                let width = CVPixelBufferGetWidth(map), height = CVPixelBufferGetHeight(map)
+                let x = min(width-1,max(0,Int(point.x*CGFloat(width))))
+                let y = min(height-1,max(0,Int(point.y*CGFloat(height))))
+                let qualityX = min(CVPixelBufferGetWidth(confidence)-1,max(0,Int(point.x*CGFloat(CVPixelBufferGetWidth(confidence)))))
+                let qualityY = min(CVPixelBufferGetHeight(confidence)-1,max(0,Int(point.y*CGFloat(CVPixelBufferGetHeight(confidence)))))
+                let depth = depthBase.assumingMemoryBound(to:Float32.self)[y*CVPixelBufferGetBytesPerRow(map)/MemoryLayout<Float32>.stride+x]
+                let local = rotation.transpose * world
+                distance = Double(depth / max(0.0001,-local.z))
+                reliable = qualityBase.assumingMemoryBound(to:UInt8.self)[qualityY*CVPixelBufferGetBytesPerRow(confidence)+qualityX] == UInt8(ARConfidenceLevel.high.rawValue)
+            }
+            return SkyAnalysisRay(index:index,rawX:Double(point.x),rawY:Double(point.y),distance:distance,depthReliable:reliable)
         }
     }
     private static func skyDirection(_ vector: SIMD3<Float>) -> SkyDirection {

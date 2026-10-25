@@ -84,7 +84,7 @@ final class SkyDomeProjectionTests: XCTestCase {
             XCTAssertEqual(pose.forward.dot(pose.right),0,accuracy:1e-12)
             let phone = pose.handsetPoint(0,0)
             XCTAssertGreaterThan(phone.dot(pose.forward),0,"The phone must remain ahead of the person.")
-            XCTAssertGreaterThan(phone.dot(pose.right),0,"A slight right offset keeps the handset visible over the shoulder.")
+            XCTAssertEqual(phone.dot(pose.right),0,accuracy:1e-12,"The handset stays on the body's central plane.")
             XCTAssertGreaterThan(phone.z,0.4)
             let orientation = SkyDomeOrientation.resolve(startAzimuth:bearing,viewingDirection:nil)
             let projection = SkyDomeProjection(yaw:orientation.yaw,pitch:orientation.pitch)
@@ -92,6 +92,92 @@ final class SkyDomeProjectionTests: XCTestCase {
             XCTAssertLessThan(projection.projected(pose.forward).depth,0,"The initial camera must see the person's back.")
         }
         XCTAssertEqual(SkyDomeObserverPose(startAzimuth:nil).forward,SkyDomeObserverPose(startAzimuth:.nan).forward)
+    }
+
+    func testBothArmsHaveEqualAnatomicalLengthsAndMirroredGrip() {
+        for bearing in [0.0,90,135,225,359] {
+            let pose = SkyDomeObserverPose(startAzimuth:bearing)
+            let left = pose.arm(side:-1), right = pose.arm(side:1)
+            for arm in [left,right] {
+                let upper = arm.elbow.subtracting(arm.shoulder)
+                let lower = arm.hand.subtracting(arm.elbow)
+                XCTAssertEqual(sqrt(upper.dot(upper)),SkyDomeObserverPose.upperArmLength,accuracy:1e-12)
+                XCTAssertEqual(sqrt(lower.dot(lower)),SkyDomeObserverPose.forearmLength,accuracy:1e-12)
+            }
+            for (a,b) in [(left.shoulder,right.shoulder),(left.elbow,right.elbow),(left.hand,right.hand)] {
+                XCTAssertEqual(a.dot(pose.right),-b.dot(pose.right),accuracy:1e-12)
+                XCTAssertEqual(a.dot(pose.forward),b.dot(pose.forward),accuracy:1e-12)
+                XCTAssertEqual(a.z,b.z,accuracy:1e-12)
+            }
+            let gripCenter = left.hand.adding(right.hand).scaled(0.5)
+            let phoneGrip = pose.handsetPoint(0,-0.05)
+            XCTAssertEqual(gripCenter.x,phoneGrip.x,accuracy:1e-12)
+            XCTAssertEqual(gripCenter.y,phoneGrip.y,accuracy:1e-12)
+            XCTAssertEqual(gripCenter.z,phoneGrip.z,accuracy:1e-12)
+        }
+    }
+
+    func testProCameraIslandHasThreeRigidLensesAcrossWorldRotation() {
+        let lenses = SkyDomeObserverPose.cameraLenses
+        XCTAssertEqual(lenses.count,3)
+        let area = abs((lenses[1].x-lenses[0].x)*(lenses[2].y-lenses[0].y)
+                     -(lenses[1].y-lenses[0].y)*(lenses[2].x-lenses[0].x))
+        XCTAssertGreaterThan(area,0.001,"The three lenses form a triangle, not a vertical strip.")
+        for bearing in stride(from:0.0,to:360,by:15) {
+            let pose = SkyDomeObserverPose(startAzimuth:bearing)
+            let center = pose.handsetPoint(0,0)
+            let points = lenses.map { pose.handsetPoint($0.x,$0.y,surfaceOffset:0.013) }
+            for point in points {
+                XCTAssertEqual(point.subtracting(center).dot(pose.handsetNormal),0.013,accuracy:1e-12)
+            }
+            for first in 0..<3 {
+                for second in (first+1)..<3 {
+                    let delta = points[first].subtracting(points[second])
+                    let expected = hypot(lenses[first].x-lenses[second].x,lenses[first].y-lenses[second].y)
+                    XCTAssertEqual(sqrt(delta.dot(delta)),expected,accuracy:1e-12)
+                }
+            }
+            let back = SkyDomeProjection(yaw:180-bearing,pitch:32)
+            let front = SkyDomeProjection(yaw:-bearing,pitch:32)
+            XCTAssertGreaterThan(pose.handsetNormal.dot(back.towardCamera),0)
+            XCTAssertLessThan(pose.handsetNormal.dot(front.towardCamera),0)
+        }
+    }
+
+    func testFaceFeaturesBelongToFrontSurfaceOfHead() {
+        for bearing in [0.0,90,225] {
+            let pose = SkyDomeObserverPose(startAzimuth:bearing)
+            let center = pose.point(height:0.60)
+            let rearView = SkyDomeProjection(yaw:-bearing,pitch:32)
+            XCTAssertLessThan(pose.forward.dot(rearView.towardCamera),0)
+            for (side,height) in [(-0.017,0.012),(0.017,0.012),(0.0,-0.002),(0.0,-0.023)] {
+                let offset = pose.facePoint(side:side,aboveCenter:height).subtracting(center)
+                XCTAssertEqual(sqrt(offset.dot(offset)),0.056,accuracy:1e-12)
+                XCTAssertGreaterThan(offset.dot(pose.forward),0)
+                XCTAssertLessThan(offset.dot(rearView.towardCamera),0,"Facial features must not show through the back of the head.")
+            }
+        }
+    }
+
+    func testPhoneDecalsCannotSortBehindTheirBodyAtObliqueAngles() {
+        let pose = SkyDomeObserverPose(startAzimuth:135)
+        let surfaces = [pose.handsetPoint(0,0,surfaceOffset:0.004),
+                        pose.handsetPoint(0.010,0.057,surfaceOffset:0.010)]
+            + SkyDomeObserverPose.cameraLenses.map { pose.handsetPoint($0.x,$0.y,surfaceOffset:0.013) }
+        var exposesOldSortingError = false
+        for yaw in stride(from:0.0,to:360,by:10) {
+            for pitch in [15.0,32,75] {
+                let projection = SkyDomeProjection(yaw:yaw,pitch:pitch)
+                guard pose.handsetNormal.dot(projection.towardCamera) > 0 else { continue }
+                let anchor = projection.projected(pose.handsetPoint(0,0)).depth
+                let depths = [anchor-1] + surfaces.map { projection.projected($0).depth } + [anchor+1]
+                let group = SkyDomePaintGroup(range:1..<6,depth:anchor)
+                let order = SkyDomePaintOrder.indices(depths:depths,groups:[group])
+                XCTAssertEqual(order,[0,1,2,3,4,5,6],"Body, island and all three lenses retain their surface order.")
+                if depths.indices.sorted(by:{ depths[$0] < depths[$1] }) != order { exposesOldSortingError = true }
+            }
+        }
+        XCTAssertTrue(exposesOldSortingError,"Regression data must exercise the former mean-depth defect.")
     }
 
     func testObserverKeepsInitialHeadingWhenCameraShowsBackProfileOrFront() {

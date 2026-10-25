@@ -5,6 +5,9 @@ struct SkyDomeVector: Equatable {
     var y: Double
     var z: Double
     func dot(_ other: Self) -> Double { x*other.x + y*other.y + z*other.z }
+    func adding(_ other: Self) -> Self { .init(x:x+other.x,y:y+other.y,z:z+other.z) }
+    func subtracting(_ other: Self) -> Self { .init(x:x-other.x,y:y-other.y,z:z-other.z) }
+    func scaled(_ value: Double) -> Self { .init(x:x*value,y:y*value,z:z*value) }
     var normalized: Self {
         let length = sqrt(dot(self))
         guard length > 1e-12 else { return self }
@@ -142,6 +145,15 @@ struct SkyDomePoint {
 }
 
 struct SkyDomeObserverPose {
+    struct Arm {
+        let shoulder: SkyDomeVector
+        let elbow: SkyDomeVector
+        let hand: SkyDomeVector
+    }
+    static let upperArmLength = 0.18
+    static let forearmLength = 0.17
+    // Fixed handset coordinates, not positions inferred from the current view.
+    static let cameraLenses: [(x: Double,y: Double)] = [(0.025,0.076),(0.025,0.038),(-0.009,0.057)]
     let forward: SkyDomeVector
     let right: SkyDomeVector
 
@@ -158,8 +170,52 @@ struct SkyDomeObserverPose {
 
     func handsetPoint(_ side: Double, _ height: Double, surfaceOffset: Double = 0) -> SkyDomeVector {
         let tilt = 18.0 * .pi/180
-        return point(side:0.135+side,forward:0.24-height*sin(tilt)+surfaceOffset*cos(tilt),
-                     height:0.485+height*cos(tilt)+surfaceOffset*sin(tilt))
+        return point(side:side,forward:0.24-height*sin(tilt)+surfaceOffset*cos(tilt),
+                     height:0.56+height*cos(tilt)+surfaceOffset*sin(tilt))
+    }
+
+    var handsetNormal: SkyDomeVector {
+        let tilt = 18.0 * .pi/180
+        return .init(x:forward.x*cos(tilt),y:forward.y*cos(tilt),z:sin(tilt))
+    }
+
+    func arm(side: Double) -> Arm {
+        let sign = side < 0 ? -1.0:1.0
+        let shoulder = point(side:sign*0.091,height:0.467)
+        let hand = handsetPoint(sign*0.045,-0.05)
+        let reach = hand.subtracting(shoulder)
+        let distance = sqrt(reach.dot(reach))
+        let axis = reach.scaled(1/distance)
+        let along = (Self.upperArmLength*Self.upperArmLength-Self.forearmLength*Self.forearmLength+distance*distance)/(2*distance)
+        let outward = point(side:sign*0.8,height:-0.6)
+        let bend = outward.subtracting(axis.scaled(outward.dot(axis))).normalized
+        let lift = sqrt(max(0,Self.upperArmLength*Self.upperArmLength-along*along))
+        let elbow = shoulder.adding(axis.scaled(along)).adding(bend.scaled(lift))
+        return .init(shoulder:shoulder,elbow:elbow,hand:hand)
+    }
+
+    func facePoint(side: Double, aboveCenter: Double) -> SkyDomeVector {
+        let radius = 0.056
+        let forward = sqrt(max(0,radius*radius-side*side-aboveCenter*aboveCenter))
+        return point(side:side,forward:forward,height:0.60+aboveCenter)
+    }
+}
+
+struct SkyDomePaintGroup {
+    let range: Range<Int>
+    let depth: Double
+}
+
+enum SkyDomePaintOrder {
+    static func indices(depths: [Double], groups: [SkyDomePaintGroup]) -> [Int] {
+        var depths = depths
+        for group in groups {
+            for index in group.range { depths[index] = group.depth }
+        }
+        return depths.indices.sorted {
+            if depths[$0] == depths[$1] { return $0 < $1 }
+            return depths[$0] < depths[$1]
+        }
     }
 }
 
@@ -215,7 +271,7 @@ struct SkyDomeView: View {
                         .contentShape(Rectangle())
                         .highPriorityGesture(dragGesture,including:followsPhone ? .none:.all)
                         .accessibilityElement(children:.ignore)
-                        .accessibilityLabel("Объёмная точечная карта неба. Человек с iPhone смотрит в сторону начала сканирования. Белый — отмеченное открытое небо, красный — препятствия, серый — не проверено" + (showPassPath ? ", золотой — путь спутника":""))
+                        .accessibilityLabel("Объёмная точечная карта неба. Человек с iPhone смотрит в сторону начала сканирования. Белый — отмеченное открытое небо, красный — препятствия, янтарный — проём или стекло с неизвестной радиопроходимостью, серый — не проверено" + (showPassPath ? ", золотой — путь спутника":""))
                         .accessibilityValue(String(format:"yaw %.2f pitch %.2f",locale:Locale(identifier:"en_US_POSIX"),orientation.yaw,orientation.pitch))
                         .accessibilityIdentifier("skyDome")
                     if followsPhone && live == nil {
@@ -283,7 +339,8 @@ struct SkyDomeView: View {
         }
         // Batch all points by semantic state and depth, keeping Canvas work
         // bounded while dragging. Hidden hemisphere points remain occluded.
-        var clouds = Array(repeating:Path(),count:16)
+        let states: [SkyCellState] = [.unknown,.observed,.clear,.blocked,.opening]
+        var clouds = Array(repeating:Path(),count:((states.map(\.rawValue).max() ?? 0)+1)*4)
         for point in SkyDomePoint.mesh {
             guard projection.isVisible(point.vector) else { continue }
             let depth = max(0,min(3,Int(projection.surfaceDepth(point.vector)*4)))
@@ -293,13 +350,14 @@ struct SkyDomeView: View {
             clouds[state.rawValue*4+depth].addEllipse(in:CGRect(x:position.x-dotRadius,y:position.y-dotRadius,
                                                              width:dotRadius*2,height:dotRadius*2))
         }
-        for state in [SkyCellState.unknown,.observed,.clear,.blocked] {
+        for state in states {
             for depth in 0..<4 {
                 let brightness = Double(depth)/3
                 let color: Color
                 switch state {
                 case .clear: color = .white.opacity(0.48+brightness*0.48)
                 case .blocked: color = Color(red:1,green:0.12,blue:0.22).opacity(0.56+brightness*0.44)
+                case .opening: color = Color(red:1,green:0.68,blue:0.22).opacity(0.56+brightness*0.44)
                 case .observed: color = Color(white:0.42).opacity(0.28+brightness*0.22)
                 case .unknown: color = Color(white:0.3).opacity(0.18+brightness*0.13)
                 }
@@ -340,16 +398,17 @@ struct SkyDomeView: View {
             var outline = true
         }
         var parts: [Part] = []
+        var surfaceGroups: [SkyDomePaintGroup] = []
         func screen(_ point: SkyDomeVector) -> CGPoint {
             let p = projection.projected(point)
             return .init(x:center.x+CGFloat(p.x*scale),y:center.y-CGFloat(p.y*scale))
         }
-        func limb(_ points: [SkyDomeVector], width: Double, white: Double) {
+        func limb(_ points: [SkyDomeVector], width: Double, white: Double, outline: Bool = true) {
             guard let first = points.first else { return }
             var path = Path(); path.move(to:screen(first))
             for point in points.dropFirst() { path.addLine(to:screen(point)) }
             let depth = points.map { projection.projected($0).depth }.reduce(0,+)/Double(points.count)
-            parts.append(.init(path:path,depth:depth,white:white,width:CGFloat(width*scale)))
+            parts.append(.init(path:path,depth:depth,white:white,width:CGFloat(width*scale),outline:outline))
         }
         func polygon(_ points: [SkyDomeVector], white: Double, outline: Bool = false) {
             guard let first = points.first else { return }
@@ -364,6 +423,12 @@ struct SkyDomeView: View {
             parts.append(.init(path:Path(ellipseIn:CGRect(x:p.x-r,y:p.y-r,width:r*2,height:r*2)),
                                depth:projection.projected(point).depth,white:white,outline:outline))
         }
+        func pinSurfaceLayers(from index: Int, to point: SkyDomeVector) {
+            // Keep a surface and its decals contiguous in painter order. A
+            // lens must never slip behind the mean depth of its own phone body.
+            let depth = projection.projected(point).depth
+            surfaceGroups.append(.init(range:index..<parts.count,depth:depth))
+        }
         let shadow = CGRect(x:center.x-CGFloat(scale*0.22),y:center.y-CGFloat(scale*0.055),
                             width:CGFloat(scale*0.44),height:CGFloat(scale*0.11))
         context.fill(Path(ellipseIn:shadow),with:.color(.black.opacity(0.75)))
@@ -373,12 +438,10 @@ struct SkyDomeView: View {
                   pose.point(side:side*0.071,height:0.025)],width:0.056,white:0.24)
             limb([pose.point(side:side*0.075,forward:-0.015,height:0.025),
                   pose.point(side:side*0.075,forward:0.045,height:0.025)],width:0.045,white:0.20)
-            let shoulder = pose.point(side:side*0.091,height:0.467)
-            let elbow = pose.point(side:side < 0 ? -0.108:0.19,forward:0.11,height:0.37)
-            let hand = pose.handsetPoint(side*0.045,-0.05)
-            limb([shoulder,elbow],width:0.049,white:0.34)
-            limb([elbow,hand],width:0.037,white:0.77)
-            sphere(hand,radius:0.023,white:0.82)
+            let arm = pose.arm(side:side)
+            limb([arm.shoulder,arm.elbow],width:0.049,white:0.34)
+            limb([arm.elbow,arm.hand],width:0.037,white:0.77)
+            sphere(arm.hand,radius:0.023,white:0.82)
         }
         // Rounded shoulder and waist rings give the jacket a soft silhouette.
         let rings = [(width:0.064,depth:0.041,height:0.255),
@@ -395,12 +458,27 @@ struct SkyDomeView: View {
             }
         }
         limb([pose.point(height:0.475),pose.point(height:0.56)],width:0.047,white:0.76)
-        sphere(pose.point(height:0.60),radius:0.056,white:0.84)
+        let headCenter = pose.point(height:0.60)
+        let headGroupStart = parts.count
+        sphere(headCenter,radius:0.056,white:0.84)
         let front = pose.forward.dot(projection.towardCamera)
-        if front > -0.15 {
-            // A restrained profile cue, without a robotic face or joint markers.
-            sphere(pose.point(forward:0.052,height:0.592),radius:0.012,white:0.74,outline:false)
+        if front > 0 {
+            func visibleFacePoint(_ point: SkyDomeVector) -> Bool {
+                point.subtracting(headCenter).dot(projection.towardCamera) > 0
+            }
+            for side in [-1.0,1.0] {
+                let eye = pose.facePoint(side:side*0.017,aboveCenter:0.012)
+                if visibleFacePoint(eye) { sphere(eye,radius:0.0035,white:0.19,outline:false) }
+            }
+            let nose = pose.facePoint(side:0,aboveCenter:-0.002)
+            if visibleFacePoint(nose) { sphere(nose,radius:0.006,white:0.70,outline:false) }
+            let mouth = (0...8).map { step -> SkyDomeVector in
+                let x = (Double(step)/8-0.5)*0.030
+                return pose.facePoint(side:x,aboveCenter:-0.023+0.005*pow(x/0.015,2))
+            }
+            if mouth.allSatisfy(visibleFacePoint) { limb(mouth,width:0.0035,white:0.27,outline:false) }
         }
+        pinSurfaceLayers(from:headGroupStart,to:headCenter)
         func phonePanel(x: Double = 0, y: Double = 0, width: Double, height: Double,
                         radius: Double, offset: Double) -> [SkyDomeVector] {
             let corners = [(-width/2+radius,-height/2+radius,180.0),
@@ -421,15 +499,14 @@ struct SkyDomeView: View {
             }
             polygon(points,white:white)
         }
-        let tilt = 18.0 * .pi/180
-        let phoneNormal = SkyDomeVector(x:pose.forward.x*cos(tilt),y:pose.forward.y*cos(tilt),z:sin(tilt))
-        let showsBack = phoneNormal.dot(projection.towardCamera) > 0
+        let phoneGroupStart = parts.count
+        let showsBack = pose.handsetNormal.dot(projection.towardCamera) > 0
         let face = showsBack ? 0.004:-0.004
         polygon(phonePanel(width:0.092,height:0.194,radius:0.013,offset:face),white:0.73,outline:true)
         if showsBack {
             polygon(phonePanel(x:0.010,y:0.057,width:0.067,height:0.067,radius:0.010,offset:0.010),white:0.48)
             // Pro camera island: three separate lenses in a triangle.
-            for (x,y) in [(0.025,0.076),(0.025,0.038),(-0.009,0.057)] {
+            for (x,y) in SkyDomeObserverPose.cameraLenses {
                 lens(x:x,y:y,radius:0.013,offset:0.012,white:0.67)
                 lens(x:x,y:y,radius:0.010,offset:0.013,white:0.06)
                 lens(x:x-0.003,y:y+0.003,radius:0.003,offset:0.014,white:0.35)
@@ -440,10 +517,14 @@ struct SkyDomeView: View {
             polygon(phonePanel(y:0.075,width:0.027,height:0.008,radius:0.004,offset:-0.007),white:0.025)
             polygon(phonePanel(y:-0.078,width:0.026,height:0.002,radius:0.001,offset:-0.007),white:0.72)
         }
-        for part in parts.sorted(by:{ $0.depth < $1.depth }) {
+        pinSurfaceLayers(from:phoneGroupStart,to:pose.handsetPoint(0,0,surfaceOffset:face))
+        for index in SkyDomePaintOrder.indices(depths:parts.map(\.depth),groups:surfaceGroups) {
+            let part = parts[index]
             if part.width > 0 {
-                context.stroke(part.path,with:.color(.white.opacity(0.55)),
-                               style:StrokeStyle(lineWidth:part.width+0.9,lineCap:.round,lineJoin:.round))
+                if part.outline {
+                    context.stroke(part.path,with:.color(.white.opacity(0.55)),
+                                   style:StrokeStyle(lineWidth:part.width+0.9,lineCap:.round,lineJoin:.round))
+                }
                 context.stroke(part.path,with:.color(Color(white:part.white)),
                                style:StrokeStyle(lineWidth:part.width,lineCap:.round,lineJoin:.round))
             } else {

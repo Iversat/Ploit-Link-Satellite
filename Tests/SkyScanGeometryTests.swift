@@ -3,6 +3,20 @@ import simd
 @testable import PloitSatellite
 
 final class SkyScanGeometryTests: XCTestCase {
+    func testCollectedDotsConvergeTowardCenterWithoutOvershooting() {
+        let origin = CGPoint(x:0.8,y:0.25), center = CGPoint(x:0.5,y:0.5)
+        XCTAssertEqual(SkyScanCollectionAnimation.point(from:origin,toward:center,progress:0),origin)
+        XCTAssertEqual(SkyScanCollectionAnimation.point(from:origin,toward:center,progress:1),center)
+        var lastDistance = Double.infinity
+        for step in 0...20 {
+            let point = SkyScanCollectionAnimation.point(from:origin,toward:center,progress:Double(step)/20)
+            let distance = hypot(Double(point.x-center.x),Double(point.y-center.y))
+            XCTAssertLessThanOrEqual(distance,lastDistance)
+            lastDistance = distance
+        }
+        XCTAssertEqual(SkyScanCollectionAnimation.point(from:origin,toward:center,progress:.nan),origin)
+        XCTAssertEqual(SkyScanCollectionAnimation.point(from:origin,toward:center,progress:2),center)
+    }
     func testCollectionExcludesMeasuredControlsAndInvalidViewport() {
         let visible = CGRect(x:0,y:0.25,width:1,height:0.4)
         XCTAssertTrue(SkyScanCollectionArea.contains(CGPoint(x:0.5,y:0.5),visible:visible))

@@ -1,0 +1,16 @@
+{
+  "checkpoint_url": "https://download.openmmlab.com/mmsegmentation/v0.5/mobilenet_v2/deeplabv3_m-v2-d8_512x512_160k_ade20k/deeplabv3_m-v2-d8_512x512_160k_ade20k_20200825_223255-63986343.pth",
+  "checkpoint_sha256": "6398634362949fa37d4dc9004fe4f04a2b8bd2510efba750951f1652187ae905",
+  "source": "https://github.com/open-mmlab/mmsegmentation/tree/v0.30.0",
+  "torch": "2.7.0",
+  "coremltools": "8.3.0",
+  "python": "3.11.9",
+  "format": "ML Program FP16, iOS17",
+  "input": "image RGB 512x512",
+  "output": "logits float32 [1,150,64,64]",
+  "nativeCoreMLAgreement": {
+    "meanAbsoluteLogitError": 0.011854051612317562,
+    "maxAbsoluteLogitError": 0.16109085083007812,
+    "argmaxAgreement": 0.9990234375
+  }
+}

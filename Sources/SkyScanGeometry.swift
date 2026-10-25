@@ -94,6 +94,11 @@ struct SkyScanCollectionAnimation {
         guard let start = collectedAt[id], time.isFinite, time >= start, time-start < Self.duration else { return nil }
         return (time-start)/Self.duration
     }
+    static func point(from origin: CGPoint, toward center: CGPoint, progress: Double) -> CGPoint {
+        let t = CGFloat(min(1,max(0,progress.isFinite ? progress:0)))
+        let eased = t*t*(3-2*t)
+        return CGPoint(x:origin.x+(center.x-origin.x)*eased,y:origin.y+(center.y-origin.y)*eased)
+    }
 }
 
 #if DEBUG

@@ -98,7 +98,7 @@ struct AssistantView: View {
         .fullScreenCover(isPresented:$model.scannerPresented) { SiteScanView().environmentObject(model) }
     }
     private var status: some View {
-        GlassPanel {
+        GlassPanel(liquidGlass: true) {
             VStack(alignment: .leading,spacing: 6) {
                 HStack {
                     Text(statusTitle).font(.system(size: 21,weight: .semibold))

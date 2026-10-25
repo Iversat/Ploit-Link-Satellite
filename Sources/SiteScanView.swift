@@ -56,6 +56,9 @@ struct SiteScanView: View {
         if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-site-gyro") {
             return .init(azimuth:220,elevation:40)
         }
+        if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-site-face") {
+            return .init(azimuth:315,elevation:30)
+        }
         #endif
         return nil
     }
@@ -83,7 +86,7 @@ struct SiteScanView: View {
                     let arguments = ProcessInfo.processInfo.arguments
                     if arguments.contains("--ui-screenshot-site-intro") { screen = .introduction }
                     if arguments.contains("--ui-screenshot-site-info") { information = true }
-                    if arguments.contains("--ui-screenshot-site-gyro") { followsPhone = true }
+                    if arguments.contains("--ui-screenshot-site-gyro") || arguments.contains("--ui-screenshot-site-face") { followsPhone = true }
                 }
                 #endif
             }
@@ -135,7 +138,13 @@ struct SiteScanView: View {
             }
             instruction("1",title:"Поднимите камеру",detail:"Останьтесь на одном месте и направьте заднюю камеру в небо.")
             instruction("2",title:"Соберите точки",detail:"Медленно поворачивайте телефон. Точки фиксируются в центральной области камеры.")
-            instruction("3",title:"Отметьте препятствия",detail:"Подтвердите небо и дальние препятствия кнопками. LiDAR дополнит карту близкими поверхностями.")
+            instruction("3",title:"Проверьте карту ИИ",detail:"Камера распознаёт небо и препятствия, LiDAR дополняет близкие поверхности. Сомнительные области можно отметить вручную.")
+            VStack(alignment:.leading,spacing:10) {
+                Text("Где находится антенна").font(.subheadline.weight(.medium))
+                environmentPicker
+                Text("В помещении небо через окно отмечается как возможный просвет. Стекло и рамы могут мешать сигналу.")
+                    .font(.caption).foregroundStyle(.white.opacity(0.55))
+            }
             Text(scan.message).font(.caption).foregroundStyle(.white.opacity(0.55)).accessibilityIdentifier("scanStatus")
             primary("Начать сканирование",id:"startSiteScan") { start(collecting:true) }
         }.padding(24)
@@ -147,8 +156,9 @@ struct SiteScanView: View {
                         viewingDirection:demoViewingDirection,
                         startAzimuth:scan.startAzimuth,followsPhone:followsPhone,
                         showPassPath:showPassPath,sensors:model.sensors).frame(height:310)
-            HStack(spacing:18) {
+            HStack(spacing:12) {
                 legend("Неизвестно",color:Color(white:0.25)); legend("Открыто",color:.white); legend("Препятствия",color:Color(red:1,green:0.18,blue:0.25))
+                legend("Просвет",color:.orange)
             }.font(.system(size:11))
             Picker("Режим обзора",selection:$followsPhone) {
                 Text("От точки старта").tag(false)
@@ -180,9 +190,17 @@ struct SiteScanView: View {
                     }
                 }
                 Text(pathMessage).font(.caption).foregroundStyle(.white.opacity(0.5))
+                if assessment.opening > 0 {
+                    Text("Янтарные области — возможные просветы. Видимое небо через окно не подтверждает прохождение сигнала через стекло.")
+                        .font(.caption).foregroundStyle(.orange.opacity(0.9))
+                }
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading)
                 .satelliteGlass(in:RoundedRectangle(cornerRadius:24,style:.continuous))
             HStack { Text("Просмотрено неба").foregroundStyle(.white.opacity(0.55)); Spacer(); Text("\(Int(scan.coverageFraction*100))%").monospacedDigit() }.font(.system(size:13))
+            if !preview {
+                Label(scan.analysisStatus,systemImage:"sparkles").font(.caption).foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth:.infinity,alignment:.leading).accessibilityIdentifier("skyAnalysisStatus")
+            }
             VStack(spacing:10) {
                 primary("Осмотреть камерой",id:"inspectSiteScan",inverted:false) { start(collecting:false) }
                 primary("Новое сканирование",id:"startSiteScan") { start(collecting:true) }
@@ -213,26 +231,23 @@ struct SiteScanView: View {
                         let point = CGPoint(x:target.x*size.width,y:target.y*size.height)
                         guard area.contains(point) else { continue }
                         if screen == .scanning, let progress = target.collectionProgress {
-                            let size = CGFloat(3.25*(1-progress))
-                            let ring = CGFloat(4.5+7.5*progress)
-                            context.fill(Path(ellipseIn:CGRect(x:point.x-size,y:point.y-size,width:size*2,height:size*2)),with:.color(.white.opacity(1-progress)))
-                            context.stroke(Path(ellipseIn:CGRect(x:point.x-ring,y:point.y-ring,width:ring*2,height:ring*2)),with:.color(.white.opacity(0.7*(1-progress))),lineWidth:1.2)
+                            let destination = CGPoint(x:size.width/2,y:size.height/2)
+                            let gathered = SkyScanCollectionAnimation.point(from:point,toward:destination,progress:progress)
+                            let radius = CGFloat(3.25*(1-progress))
+                            context.fill(Path(ellipseIn:CGRect(x:gathered.x-radius,y:gathered.y-radius,width:radius*2,height:radius*2)),
+                                         with:.color(Color(red:0.7,green:1,blue:0.73).opacity(1-progress)))
                             continue
                         }
                         let radius: CGFloat = screen == .inspecting ? 3.5:CGFloat(3.25 * (1-0.25*target.dwellFraction))
                         let color: Color
                         switch screen == .scanning ? .unknown : target.state {
                         case .blocked: color = Color(red:1,green:0.2,blue:0.26)
+                        case .opening: color = .orange
                         case .clear: color = .white
                         case .observed: color = .gray
                         case .unknown: color = screen == .scanning ? Color(red:0.7,green:1,blue:0.73):Color(white:0.3)
                         }
                         context.fill(Path(ellipseIn:CGRect(x:point.x-radius,y:point.y-radius,width:radius*2,height:radius*2)),with:.color(color))
-                        if screen == .scanning && target.dwellFraction > 0 {
-                            let ring = Path(ellipseIn:CGRect(x:point.x-7,y:point.y-7,width:14,height:14))
-                                .trimmedPath(from:0,to:target.dwellFraction)
-                            context.stroke(ring,with:.color(.white.opacity(0.8)),lineWidth:1.2)
-                        }
                     }
                 }.allowsHitTesting(false).accessibilityElement(children:.ignore)
                     .accessibilityLabel("Точки обзора камеры").accessibilityValue("\(scan.projectedTargets.count)")
@@ -268,6 +283,22 @@ struct SiteScanView: View {
                         .accessibilityValue(scan.torchAvailable ? (scan.isTorchOn ? "Включён":"Выключен"):"Недоступен")
                         .accessibilityIdentifier("scanTorch")
                 }.padding(.horizontal,20).padding(.top,10)
+                if screen == .scanning {
+                    HStack(spacing:10) {
+                        Label(preview ? "ИИ · пример карты":scan.analysisStatus,systemImage:"sparkles")
+                            .font(.system(size:11,weight:.medium)).lineLimit(2)
+                            .accessibilityIdentifier("skyAnalysisStatus")
+                        Spacer(minLength:8)
+                        Menu {
+                            Picker("Обстановка",selection:$scan.environment) {
+                                ForEach(SkyScanEnvironment.allCases) { value in Text(value.title).tag(value) }
+                            }
+                        } label: {
+                            Text(scan.environment.title).font(.system(size:12,weight:.medium)).padding(.horizontal,12).padding(.vertical,9)
+                                .satelliteGlass(in:Capsule(),interactive:true)
+                        }.accessibilityIdentifier("scanEnvironment")
+                    }.padding(.horizontal,20).padding(.top,8)
+                }
             }.background(cameraControlMeasurement("top"))
             Spacer(minLength:20)
             VStack(spacing:8) {
@@ -352,8 +383,10 @@ struct SiteScanView: View {
                         Text("Процент — просмотренная площадь неба. Собранная точка ещё не означает, что в этом направлении нет препятствий.")
                     }.padding(20).frame(maxWidth:.infinity,alignment:.leading)
                         .satelliteGlass(in:RoundedRectangle(cornerRadius:24,style:.continuous))
-                    Text("Небо, дальние здания и деревья отмечаются по камере вручную. LiDAR отмечает близкие поверхности до 6 м; отсутствие глубины не означает открытое небо.")
-                    Text("Белые точки — открытое небо, красные — препятствия. Тёмные и серые точки требуют проверки. Путь выбранного спутника можно включить отдельно: он показан жёлтой линией.")
+                    Text("ИИ на iPhone анализирует кадры камеры: небо, здания, деревья, стены и окна. Результаты нескольких кадров объединяются с LiDAR, если он доступен. Близкая поверхность с уверенным измерением глубины считается препятствием; отсутствие глубины не означает открытое небо.")
+                    Text("«На улице» ищет открытое небо над препятствиями. «В помещении» отмечает окна и видимое за ними небо как возможные просветы. В режиме «Авто» обстановка уточняется по нескольким кадрам; её можно выбрать вручную.")
+                    Text("Белые точки — видимое открытое небо, красные — препятствия, янтарные — возможные просветы. Тёмные и серые точки требуют проверки. Путь выбранного спутника можно включить отдельно: он показан жёлтой линией.")
+                    Text("Модель может ошибаться на отражениях, стекле, в темноте и на незнакомых объектах. Отметки можно уточнить кнопками. Камера не определяет радиопрозрачность окна; окончательно связь проверяет внешний радиомодуль.")
                     Text("«От точки старта» возвращает карту к направлению начала сканирования. В режиме «Гироскоп» поворачивайте телефон на том же месте: задняя камера задаёт направление обзора. Эти режимы не добавляют новые измерения.")
                     Text("Мягкий отклик отмечает сбор новых точек. Фонарик освещает близкие предметы; дальние препятствия в темноте могут оставаться неразличимыми.")
                     Text("Карта относится к одной точке. После перемещения начните новое сканирование. Стены и потолок следует отмечать как препятствия.")
@@ -362,6 +395,11 @@ struct SiteScanView: View {
             }.background(Color.black).navigationTitle("Проверка места").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { information = false } } }
         }.tint(.white).preferredColorScheme(.dark)
+    }
+    private var environmentPicker: some View {
+        Picker("Обстановка",selection:$scan.environment) {
+            ForEach(SkyScanEnvironment.allCases) { value in Text(value.title).tag(value) }
+        }.pickerStyle(.segmented).accessibilityIdentifier("scanEnvironmentChoice")
     }
     private func loadPath() async {
         path = []
