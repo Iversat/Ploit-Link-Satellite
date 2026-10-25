@@ -76,8 +76,9 @@ The app helps you choose a satellite, find an upcoming pass, point your antenna 
 <summary>Экран проверки места</summary>
 
 <p align="center">
-  <img src="docs/screenshots/site-capture.png" width="45%" alt="Сбор точек обзора камерой">
-  <img src="docs/screenshots/site-scan.png" width="45%" alt="Точечная карта обзора неба">
+  <img src="docs/screenshots/site-capture.png" width="32%" alt="Сбор точек обзора камерой">
+  <img src="docs/screenshots/site-scan.png" width="32%" alt="Точечная карта обзора неба от начала сканирования">
+  <img src="docs/screenshots/site-face.png" width="32%" alt="Поворот карты и человек с iPhone по центру между руками">
 </p>
 
 *Демонстрационные снимки симулятора. Камера не используется, отметки не являются результатом измерения.*
