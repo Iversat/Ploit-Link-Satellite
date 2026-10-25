@@ -105,6 +105,7 @@ jobs:
             for SCENE in $SCENES; do
               xcrun simctl terminate "$DEVICE" ru.ploit.satellite || true
               rm -f "$DATA/Library/Caches/earth-textures-ready"
+              rm -f "$DATA/Library/Caches/night-panorama-ready"
               xcrun simctl launch "$DEVICE" ru.ploit.satellite "--ui-screenshot-$SCENE"
               case "$SCENE" in home*|orbits-*|earth-*)
                 for ATTEMPT in {1..60}; do
@@ -113,6 +114,13 @@ jobs:
                 done
                 test -f "$DATA/Library/Caches/earth-textures-ready"
                 ;;
+                night-sky*)
+                  for ATTEMPT in {1..45}; do
+                    [ -f "$DATA/Library/Caches/night-panorama-ready" ] && break
+                    sleep 1
+                  done
+                  test -f "$DATA/Library/Caches/night-panorama-ready"
+                  ;;
               esac
               sleep 3
               xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-$SCENE.png"

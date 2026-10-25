@@ -1,6 +1,7 @@
 import XCTest
 import ImageIO
 import Metal
+import MetalKit
 @testable import PloitSatellite
 
 final class NightSkyTests: XCTestCase {
@@ -77,6 +78,40 @@ final class NightSkyTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("Metal unavailable") }
         let library = try device.makeLibrary(source:NightSkyPanorama.Renderer.shader,options:nil)
         XCTAssertNotNil(library.makeFunction(name:"skyFragment"))
+    }
+    func testPanoramaProducesDetailedPixelsInsteadOfBlack() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let url = try XCTUnwrap(Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg"))
+        let texture = try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
+        let library = try device.makeLibrary(source:NightSkyPanorama.Renderer.shader,options:nil)
+        let pipeline = MTLRenderPipelineDescriptor()
+        pipeline.vertexFunction = library.makeFunction(name:"skyVertex")
+        pipeline.fragmentFunction = library.makeFunction(name:"skyFragment")
+        pipeline.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
+        let target = MTLTextureDescriptor.texture2DDescriptor(pixelFormat:.bgra8Unorm_srgb,width:512,height:256,mipmapped:false)
+        target.storageMode = .shared; target.usage = [.renderTarget,.shaderRead]
+        let output = try XCTUnwrap(device.makeTexture(descriptor:target))
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = output
+        pass.colorAttachments[0].loadAction = .clear; pass.colorAttachments[0].storeAction = .store
+        let command = try XCTUnwrap(device.makeCommandQueue()?.makeCommandBuffer())
+        let encoder = try XCTUnwrap(command.makeRenderCommandEncoder(descriptor:pass))
+        var u = NightSkyPanorama.Uniforms()
+        u.right = .init(0,1,0,0); u.up = .init(0,0,1,0); u.forward = .init(1,0,0,0)
+        u.equatorialX = .init(1,0,0,0); u.equatorialY = .init(0,1,0,0); u.equatorialZ = .init(0,0,1,0)
+        u.viewport = .init(512,256,180,0); u.options = .init(180,0,1,0)
+        encoder.setRenderPipelineState(try device.makeRenderPipelineState(descriptor:pipeline))
+        encoder.setFragmentBytes(&u,length:MemoryLayout<NightSkyPanorama.Uniforms>.stride,index:0)
+        encoder.setFragmentTexture(texture,index:0)
+        encoder.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3)
+        encoder.endEncoding(); command.commit(); command.waitUntilCompleted()
+        XCTAssertEqual(command.status,.completed)
+        var pixels = [UInt8](repeating:0,count:512*256*4)
+        pixels.withUnsafeMutableBytes { output.getBytes($0.baseAddress!,bytesPerRow:512*4,from:MTLRegionMake2D(0,0,512,256),mipmapLevel:0) }
+        let red = stride(from:2,to:pixels.count,by:4).map { pixels[$0] }
+        XCTAssertGreaterThan(red.max() ?? 0,100)
+        XCTAssertGreaterThan(Set(red).count,80)
+        XCTAssertTrue(stride(from:3,to:pixels.count,by:4).allSatisfy { pixels[$0] == 255 })
     }
     @MainActor func testDemoChatValidatesInputAndNeverClaimsRadioDelivery() async throws {
         let suite = "PLS-chat-test-\(UUID())"

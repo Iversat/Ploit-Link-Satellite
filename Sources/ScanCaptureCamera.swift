@@ -159,7 +159,7 @@ final class ScanCaptureCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDel
     }
     private func consume(_ sample: CMSampleBuffer,depth: AVDepthData?) {
         let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-        guard !deliveryInFlight,time.isFinite,time-lastFrame >= 1.0/35,let pixel = CMSampleBufferGetImageBuffer(sample),let pose = motion.deviceMotion,
+        guard !deliveryInFlight,viewport.width > 0,viewport.height > 0,time.isFinite,time-lastFrame >= 1.0/35,let pixel = CMSampleBufferGetImageBuffer(sample),let pose = motion.deviceMotion,
               abs(pose.timestamp-time) < 0.12,let callback = onFrame else { return }
         lastFrame = time
         let r = pose.attitude.rotationMatrix

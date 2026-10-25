@@ -191,7 +191,7 @@ private struct NightSkyContent: View {
                 let angles = NightSkyMath.angles(vector)
                 Text(String(format:"Азимут %.0f° · высота %.0f°",angles.azimuth,angles.elevation)).font(.caption).foregroundStyle(.secondary)
                 if angles.elevation < 0 { Text("Под горизонтом · с этой точки сейчас не видно").font(.subheadline).foregroundStyle(.orange) }
-                if mode == 1 || mode == 0 {
+                Group {
                     let error = acos(max(-1,min(1,vector.dot(currentBasis.z.negative))))*180 / .pi
                     Text(error < 5 ? "Объект в центре" : "\(mode == 0 ? "Поверните карту к метке":"Поверните телефон к метке") · \(Int(error))°")
                         .font(.subheadline).foregroundStyle(error < 5 && (mode == 0 || headingReliable) ? .green:.white)
@@ -199,7 +199,7 @@ private struct NightSkyContent: View {
                 }
             }
             Text(target.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
-        }.padding(16).satelliteGlass(in:RoundedRectangle(cornerRadius:22)).accessibilityIdentifier("nightTargetCard")
+        }.padding(16).satelliteGlass(in:RoundedRectangle(cornerRadius:22))
     }
     private func focus(_ target: NightTarget) {
         guard let observer else { return }

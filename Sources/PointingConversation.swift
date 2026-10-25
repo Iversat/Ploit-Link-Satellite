@@ -6,6 +6,7 @@ struct PointingConversation: View {
     @StateObject private var chat = DemoChat()
     @State private var draft = ""
     @FocusState private var typing: Bool
+    @State private var leaving = false
     private var available: Bool { model.target != nil && sensors.motionReady }
     private var projection: RearAimProjection? {
         guard let target = model.target,let basis = sensors.lastBasis else { return nil }
@@ -15,7 +16,7 @@ struct PointingConversation: View {
         GeometryReader { geometry in
             VStack(spacing:10) {
                 HStack {
-                    Button { typing = false; model.pointingMessages = false } label: {
+                    Button { close(finish:false) } label: {
                         Image(systemName:"chevron.left").frame(width:44,height:44)
                     }.accessibilityLabel("Вернуться к наведению").accessibilityIdentifier("closeDemoChat")
                     Spacer()
@@ -24,7 +25,7 @@ struct PointingConversation: View {
                         Text(model.satellite?.name ?? "Учебный спутник").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button { typing = false; model.leavePointing() } label: {
+                    Button { close(finish:true) } label: {
                         Image(systemName:"xmark").frame(width:44,height:44)
                     }.accessibilityLabel("Завершить наведение").accessibilityIdentifier("finishPointing")
                 }
@@ -97,13 +98,21 @@ struct PointingConversation: View {
         .background(Color(red:0.025,green:0.03,blue:0.04).ignoresSafeArea())
         .onDisappear { chat.stopReply() }
         .task {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains(where:{ $0.hasPrefix("--ui-screenshot-demo-chat") }) {
-                try? await Task.sleep(nanoseconds:500_000_000)
-                typing = true
-            }
-            #endif
+            do { try await Task.sleep(nanoseconds:350_000_000) } catch { return }
+            typing = true
         }
         .preferredColorScheme(.dark).tint(.white)
+    }
+    private func close(finish: Bool) {
+        guard !leaving else { return }
+        leaving = true; typing = false
+        // Complete the keyboard resize before replacing the pointing layout.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds:350_000_000)
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if finish { model.leavePointing() } else { model.pointingMessages = false }
+            }
+        }
     }
 }

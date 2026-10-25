@@ -83,6 +83,7 @@ enum SkyScanLocation {
     private var collectionHaptic: UIImpactFeedbackGenerator?
     private let classifier = SkySceneClassifier.shared
     private var analysisTask: Task<Void,Never>?
+    private var analysisJobID = UUID()
     private var lastAnalysis: TimeInterval = 0
     private var environmentEstimate = SkySceneEnvironmentEstimate()
     private var analysisEpoch = UUID()
@@ -237,7 +238,7 @@ enum SkyScanLocation {
         #endif
     }
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        guard running,!usingCaptureCamera else { return }
+        guard running,!usingCaptureCamera,viewportSize.width > 0,viewportSize.height > 0 else { return }
         guard case .normal = frame.camera.trackingState else {
             analysisEpoch = UUID(); direction = nil; projectedTargets = []; dwell.reset()
             message = "Медленно поверните телефон: камера уточняет положение."; return
@@ -316,8 +317,9 @@ enum SkyScanLocation {
         // Later phone rotations must never move an old inference to a new direction.
         let rays = Self.analysisRays(frame:frame,rotation:rotation)
         let classifier = self.classifier
+        let job = UUID(); analysisJobID = job
         analysisTask = Task { [weak self] in
-            defer { if let self, self.startToken == token { self.analysisTask = nil } }
+            defer { if let self, self.analysisJobID == job { self.analysisTask = nil } }
             do {
                 let classification = try await classifier.classify(pixelBuffer)
                 guard !Task.isCancelled, let self, self.startToken == token, self.analysisEpoch == epoch,

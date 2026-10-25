@@ -17,7 +17,7 @@ struct NightSkyPanorama: UIViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm_srgb
         view.isOpaque = false; view.backgroundColor = .clear
         view.clearColor = MTLClearColorMake(0,0,0,0)
-        view.isPaused = true; view.enableSetNeedsDisplay = true
+        view.isPaused = true; view.enableSetNeedsDisplay = false
         view.contentScaleFactor = UIScreen.main.nativeScale
         view.delegate = context.coordinator
         context.coordinator.prepare(view:view,onError:onError)
@@ -32,7 +32,7 @@ struct NightSkyPanorama: UIViewRepresentable {
         u.equatorialZ = convert(NightSkyMath.vector(ra:0,dec:90,observer:observer,date:date))
         u.options = .init(Float(focal),augmented ? 1:0,enabled ? 1:0,0)
         context.coordinator.uniforms = u
-        view.setNeedsDisplay()
+        view.draw()
     }
     struct Uniforms {
         var right = SIMD4<Float>(), up = SIMD4<Float>(), forward = SIMD4<Float>()
@@ -55,18 +55,20 @@ struct NightSkyPanorama: UIViewRepresentable {
                     descriptor.fragmentFunction = library.makeFunction(name:"skyFragment")
                     descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
                     let pipeline = try device.makeRenderPipelineState(descriptor:descriptor)
-                    let texture = try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
+                    let texture = try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
                     DispatchQueue.main.async {
                         guard let self,let view else { return }
                         self.pipeline = pipeline; self.texture = texture; self.queue = device.makeCommandQueue()
-                        view.setNeedsDisplay()
+                        view.draw()
                     }
                 } catch {
                     DispatchQueue.main.async { onError("Не удалось открыть детальную панораму. Каталог звёзд остаётся доступен.") }
                 }
             }
         }
-        func mtkView(_ view: MTKView,drawableSizeWillChange size: CGSize) { view.setNeedsDisplay() }
+        func mtkView(_ view: MTKView,drawableSizeWillChange size: CGSize) {
+            DispatchQueue.main.async { [weak view] in view?.draw() }
+        }
         func draw(in view: MTKView) {
             guard let pipeline,let texture,let command = queue?.makeCommandBuffer(),
                   let pass = view.currentRenderPassDescriptor,let drawable = view.currentDrawable,
@@ -78,7 +80,18 @@ struct NightSkyPanorama: UIViewRepresentable {
             encoder.setFragmentBytes(&u,length:MemoryLayout<Uniforms>.stride,index:0)
             encoder.setFragmentTexture(texture,index:0)
             encoder.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3)
-            encoder.endEncoding(); command.present(drawable); command.commit()
+            encoder.endEncoding(); command.present(drawable)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains(where:{ $0.hasPrefix("--ui-screenshot-night-sky") }) {
+                command.addCompletedHandler { result in
+                    if result.status == .completed {
+                        let url = FileManager.default.urls(for:.cachesDirectory,in:.userDomainMask)[0].appendingPathComponent("night-panorama-ready")
+                        try? Data("ready".utf8).write(to:url)
+                    }
+                }
+            }
+            #endif
+            command.commit()
         }
         static let shader = """
         #include <metal_stdlib>
