@@ -17,7 +17,9 @@ enum SkySceneFusion {
         guard sample.confidence.isFinite else { return .observed }
         switch sample.kind {
         case .solid: return sample.confidence >= 0.72 ? .blocked:.observed
-        case .window: return sample.confidence >= 0.60 ? .opening:.observed
+        // A tentative window needs less confidence than a clear-sky claim:
+        // it remains amber and never contributes to the clear-path count.
+        case .window: return sample.confidence >= 0.55 ? .opening:.observed
         case .sky:
             guard sample.confidence >= 0.85 else { return .observed }
             return environment == .outdoors ? .clear:.opening

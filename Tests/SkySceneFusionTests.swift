@@ -72,7 +72,7 @@ final class SkySceneFusionTests: XCTestCase {
     func testUncertainOrInvalidImageConfidenceRemainsObserved() {
         let samples = [SkySceneSample(kind:.sky,confidence:0.84),
                        SkySceneSample(kind:.solid,confidence:0.71),
-                       SkySceneSample(kind:.window,confidence:0.59),
+                       SkySceneSample(kind:.window,confidence:0.54),
                        SkySceneSample(kind:.sky,confidence:.nan),
                        SkySceneSample(kind:.solid,confidence:.infinity),
                        SkySceneSample(kind:.window,confidence:-.infinity)]

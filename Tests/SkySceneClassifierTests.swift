@@ -90,7 +90,7 @@ final class SkySceneClassifierTests: XCTestCase {
         XCTAssertEqual(sky.kind,.sky); XCTAssertGreaterThan(sky.confidence,0.85)
         XCTAssertEqual(facade.kind,.solid); XCTAssertGreaterThan(facade.confidence,0.72)
         XCTAssertEqual(wall.kind,.solid); XCTAssertGreaterThan(wall.confidence,0.72)
-        XCTAssertEqual(window.kind,.window); XCTAssertGreaterThan(window.confidence,0.60)
+        XCTAssertEqual(window.kind,.window); XCTAssertGreaterThan(window.confidence,0.55)
         XCTAssertEqual(SkySceneFusion.state(sample:window,distance:nil,depthReliable:false,environment:.indoors),.opening)
         XCTAssertEqual(SkySceneFusion.state(sample:facade,distance:nil,depthReliable:false,environment:.outdoors),.blocked)
         XCTAssertGreaterThan(try XCTUnwrap(indoor.indoorEvidence),0.12)
