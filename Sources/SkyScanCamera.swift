@@ -25,39 +25,6 @@ enum SkyScanLocation {
     func setOn(_ enabled: Bool, completion: @escaping @MainActor (Bool,String?) -> Void)
 }
 
-@MainActor private final class SystemSkyScanTorch: SkyScanTorchControlling {
-    private let device: AVCaptureDevice? = {
-        if let camera = ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera, camera.hasTorch { return camera }
-        return AVCaptureDevice.default(.builtInWideAngleCamera,for:.video,position:.back)
-    }()
-    private let queue = DispatchQueue(label:"ru.ploit.sky-scan.torch",qos:.userInitiated)
-    var available: Bool { device?.hasTorch == true && device?.isTorchAvailable == true }
-    var isOn: Bool { device?.torchMode == .on }
-    func setOn(_ enabled: Bool, completion: @escaping @MainActor (Bool,String?) -> Void) {
-        guard let device, device.hasTorch else { completion(false,enabled ? "Фонарик недоступен на этом устройстве.":nil); return }
-        // Serial commands keep a pending ON before the final OFF. Configuration
-        // locks stay off the UI thread; stopping never leaves a queued ON last.
-        queue.async {
-            var failure: String?
-            do {
-                if enabled || device.torchMode != .off {
-                    try device.lockForConfiguration()
-                    defer { device.unlockForConfiguration() }
-                    if enabled {
-                        if device.isTorchAvailable && device.isTorchModeSupported(.on) {
-                            try device.setTorchModeOn(level:0.25)
-                        } else { failure = "Фонарик сейчас недоступен. Дайте iPhone остыть и попробуйте снова." }
-                    } else if device.isTorchModeSupported(.off) { device.torchMode = .off }
-                }
-            } catch {
-                failure = enabled ? "Не удалось включить фонарик. Попробуйте снова.":"Не удалось выключить фонарик. Выключите его через Пункт управления."
-            }
-            let active = device.torchMode == .on, reportedFailure = failure
-            DispatchQueue.main.async { completion(active,reportedFailure) }
-        }
-    }
-}
-
 @MainActor final class SkyScanController: NSObject, ObservableObject, @preconcurrency ARSessionDelegate {
     @Published private(set) var survey = SkySurvey()
     @Published private(set) var direction: SkyDirection?

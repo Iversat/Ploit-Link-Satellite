@@ -150,6 +150,7 @@ jobs:
               -only-testing:PloitSatelliteTests/SkySurveyTests
               -only-testing:PloitSatelliteTests/SkyScanGeometryTests
               -only-testing:PloitSatelliteTests/SkyScanLifecycleTests
+                -only-testing:PloitSatelliteTests/ScanHardwareTests
               -only-testing:PloitSatelliteTests/SkyDomeProjectionTests
               -only-testing:PloitSatelliteTests/SkySceneClassifierTests
               -only-testing:PloitSatelliteTests/SkySceneFusionTests

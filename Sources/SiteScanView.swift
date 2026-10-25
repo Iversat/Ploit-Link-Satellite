@@ -96,7 +96,8 @@ struct SiteScanView: View {
                 while !Task.isCancelled {
                     if !preview {
                         scan.checkLocation(model.observer)
-                        scan.headingReady = model.sensors.northIsTrue && model.sensors.headingAccuracy >= 0 && model.sensors.headingAccuracy <= 20
+                        let ready = model.sensors.scanHeadingReady
+                        if scan.headingReady != ready { scan.headingReady = ready }
                     }
                     do { try await Task.sleep(nanoseconds:500_000_000) } catch { return }
                 }
@@ -340,8 +341,8 @@ struct SiteScanView: View {
     private var cameraCompass: some View {
         ZStack {
             Circle().fill(.black.opacity(0.65)).frame(width:48,height:48)
-            if scan.headingReady { ForEach(0..<4) { index in
-                Text(["С","В","Ю","З"][index]).font(.system(size:8,weight:.semibold)).offset(y:-17).rotationEffect(.degrees(Double(index)*90-(scan.direction?.azimuth ?? 0)))
+            if scan.direction != nil { ForEach(0..<4) { index in
+                Text(["С","В","Ю","З"][index]).foregroundStyle(scan.headingReady ? .white : .gray).font(.system(size:8,weight:.semibold)).offset(y:-17).rotationEffect(.degrees(Double(index)*90-(scan.direction?.azimuth ?? 0)))
             } }
             Image(systemName:scan.headingReady ? "location.north.fill":"location.slash").font(.system(size:10))
         }.frame(width:48,height:48).accessibilityLabel(scan.headingReady ? "Азимут \(Int(scan.direction?.azimuth ?? 0)) градусов":"Компас уточняет направление")

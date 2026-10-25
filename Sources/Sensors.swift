@@ -22,11 +22,13 @@ import CoreMotion
     private let location = CLLocationManager()
     private let motion = CMMotionManager()
     private var active = false
+    private var scanHeading = ScanHeadingReference()
+    var scanHeadingReady: Bool { active && scanHeading.isReady(at:Date()) }
     override init() {
         super.init()
         location.delegate = self
         location.desiredAccuracy = kCLLocationAccuracyBest
-        location.headingFilter = 1
+        location.headingFilter = kCLHeadingFilterNone
         location.headingOrientation = .portrait
     }
     func start() {
@@ -81,6 +83,7 @@ import CoreMotion
     #endif
     func stop() {
         active = false
+        scanHeading.reset()
         location.stopUpdatingLocation()
         location.stopUpdatingHeading()
         motion.stopDeviceMotionUpdates()
@@ -94,7 +97,12 @@ import CoreMotion
         locationAccuracy = value.horizontalAccuracy
         if !northIsTrue { motion.stopDeviceMotionUpdates(); beginMotion() }
     }
-    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) { headingAccuracy = newHeading.headingAccuracy }
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        guard active else { return }
+        headingAccuracy = newHeading.headingAccuracy
+        scanHeading.receive(accuracy:newHeading.headingAccuracy, trueHeading:newHeading.trueHeading,
+                            timestamp:newHeading.timestamp, now:Date())
+    }
     func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool { true }
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) { message = error.localizedDescription }
 }
