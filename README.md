@@ -51,15 +51,18 @@
 
 ## Как пользоваться
 
+**Наведение на звёзды без камеры:** откройте «Ночное небо» → «Гироскоп», выберите объект через «Найти» и направьте заднее стекло iPhone по метке. Для осмотра карты пальцем выберите «Обзор», для наложения на камеру — «AR».
+
 <details>
 <summary>Ночное небо и сообщения при наведении</summary>
 
 <p align="center">
-  <a href="docs/screenshots/night-sky.png"><img src="docs/screenshots/night-sky.png" width="45%" alt="Детальная панорама Млечного Пути и созвездия"></a>
-  <a href="docs/screenshots/pointing-keyboard.png"><img src="docs/screenshots/pointing-keyboard.png" width="45%" alt="Клавиатура и тестовый диалог под индикатором наведения"></a>
+  <a href="docs/screenshots/night-sky.png"><img src="docs/screenshots/night-sky.png" width="32%" alt="Детальная карта Млечного Пути и созвездия"></a>
+  <a href="docs/screenshots/night-sky-gyro.png"><img src="docs/screenshots/night-sky-gyro.png" width="32%" alt="Наведение на звёзды гироскопом без камеры"></a>
+  <a href="docs/screenshots/pointing-keyboard.png"><img src="docs/screenshots/pointing-keyboard.png" width="32%" alt="Клавиатура и тестовый диалог под индикатором наведения"></a>
 </p>
 
-Панорама: ESO/S. Brunier, CC BY 4.0. Снимки интерфейса из симулятора; сообщения учебные.
+Карта неба: NASA/Goddard SVS; Gaia DR2: ESA/Gaia/DPAC. Снимки интерфейса из симулятора; сообщения учебные.
 
 </details>
 

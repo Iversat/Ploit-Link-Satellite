@@ -30,8 +30,8 @@ enum NightSkyTexture {
     }
     static func load(device: MTLDevice) throws -> MTLTexture {
         #if targetEnvironment(simulator)
-        // Simulator's translation layer stalls on large ASTC chains. Use the
-        // same NASA map through its supported image loader, within its 8K limit.
+        // Use the same NASA map through the simulator-compatible image loader,
+        // within its 8K texture limit. Physical iPhones use the 16K ASTC chain.
         guard let url = Bundle.main.url(forResource:"night-sky-simulator",withExtension:"jpg") else { throw CocoaError(.fileNoSuchFile) }
         return try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
         #else

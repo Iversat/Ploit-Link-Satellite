@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
       - name: Capture site and home screens
-        timeout-minutes: 5
+        timeout-minutes: 12
         id: visuals
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
