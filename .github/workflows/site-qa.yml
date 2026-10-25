@@ -17,7 +17,7 @@ on:
       test_scope:
         description: Native test scope
         type: choice
-        options: [all, sky-survey, none]
+        options: [all, sky-survey, sky-analysis, none]
         default: all
 permissions:
   contents: read
@@ -159,6 +159,13 @@ jobs:
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testSkyDomeRotatesInBothDirectionsResetsAndReturnsHome
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testAutoToggleAndDateLabelExist
               -only-testing:PloitSatelliteUITests/PointingFlowTests/testUnavailableEarthAndRadarShowSamePassAndNoConnection
+            )
+          fi
+          if [ "$TEST_SCOPE" = sky-analysis ]; then
+            TESTS=(
+              -only-testing:PloitSatelliteTests/SkySurveyTests
+              -only-testing:PloitSatelliteTests/SkySceneClassifierTests
+              -only-testing:PloitSatelliteTests/SkySceneFusionTests
             )
           fi
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO "${TESTS[@]}" -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log | awk '/Test (Suite|Case)|Executed [0-9]+ tests|error:|failed|TEST (SUCCEEDED|FAILED)/ { print; fflush() }'
