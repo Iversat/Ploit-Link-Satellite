@@ -30,13 +30,11 @@ enum NightSkyTexture {
     }
     static func load(device: MTLDevice) throws -> MTLTexture {
         #if targetEnvironment(simulator)
-        // Intel simulators lack ASTC. Physical supported iPhones all support it.
-        if !device.supportsFamily(.apple2) {
-            guard let url = Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg") else { throw CocoaError(.fileNoSuchFile) }
-            return try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
-        }
-        #endif
-        // Simulator exposes Apple2 limits (8K), even on a newer host GPU.
+        // Simulator's translation layer stalls on large ASTC chains. Use the
+        // same NASA map through its supported image loader, within its 8K limit.
+        guard let url = Bundle.main.url(forResource:"night-sky-simulator",withExtension:"jpg") else { throw CocoaError(.fileNoSuchFile) }
+        return try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
+        #else
         // Supported physical iPhones expose Apple3 or later and use all 16K.
         let firstLevel = device.supportsFamily(.apple3) ? 0 : 1
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat:.astc_5x5_srgb,width:width >> firstLevel,height:height >> firstLevel,mipmapped:true)
@@ -52,5 +50,6 @@ enum NightSkyTexture {
             }
         }
         return texture
+        #endif
     }
 }

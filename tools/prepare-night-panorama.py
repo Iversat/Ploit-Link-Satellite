@@ -52,3 +52,9 @@ while True:
     level += 1
 png.unlink()
 (output/'night-sky-manifest.json').write_text(json.dumps(metadata, indent=2)+'\n')
+
+# Separate image loader for Simulator; iPhone continues to use the ASTC chain.
+sim = output/'simulator.png'
+subprocess.run([encoder, '-ds', str(output/'night-sky-1.astc'), str(sim), '-silent'], check=True)
+Image.open(sim).convert('RGB').save(output/'night-sky-simulator.jpg', quality=95, subsampling=0)
+sim.unlink()

@@ -84,6 +84,7 @@ jobs:
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing | tee build-simulator.log
       - name: Capture site and home screens
+        timeout-minutes: 5
         id: visuals
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
@@ -129,7 +130,7 @@ jobs:
                     sleep 1
                   done
                   if [ ! -f "$DATA/Library/Caches/night-panorama-ready" ]; then
-                    xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-$SCENE-failed.png" || true
+                    python3 -c 'import subprocess,sys;subprocess.run(["xcrun","simctl","io",sys.argv[1],"screenshot",sys.argv[2]],timeout=15)' "$DEVICE" "build/screenshots/$KIND-$SCENE-failed.png" || true
                     xcrun simctl spawn "$DEVICE" log show --last 2m --style compact --predicate 'process == "PloitSatellite"' > build/night-sky-errors.log || true
                     mkdir -p build/crashes
                     cp "$HOME"/Library/Logs/DiagnosticReports/PloitSatellite* build/crashes/ 2>/dev/null || true

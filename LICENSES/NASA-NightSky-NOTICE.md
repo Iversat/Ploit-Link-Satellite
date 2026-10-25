@@ -24,5 +24,6 @@ Source checksum and processing parameters: `Resources/night-sky-manifest.json`.
 
 The source image and its derived texture assets are excluded from the project's
 custom source license and naming restrictions; the source's own terms apply.
-The separately credited ESO panorama is retained only for simulators whose
-graphics device cannot decode ASTC textures. It is not used on supported iPhones.
+The simulator uses an 8192 x 4096 JPEG derived from the same map because its
+graphics translation layer has narrower texture limits. Physical iPhones use
+the 16K ASTC assets. Historical ESO screenshots retain their separate credit.
