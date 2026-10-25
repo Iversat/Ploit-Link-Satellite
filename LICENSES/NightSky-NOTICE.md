@@ -28,8 +28,9 @@ Changes: combine and normalize Russian labels and line figures, omit unused
 languages, give the two Serpens figures distinct IDs, convert GeoJSON to arrays.
 The two Serpens figures are retained separately (89 figures for 88 constellations).
 
-The Milky Way background is the 6000 × 3000 photographic ESO/S. Brunier panorama;
-see `ESO-Panorama-NOTICE.md` for its separate CC BY 4.0 license and source.
+The primary background is the NASA/Gaia 16384 × 8192 star map; see
+`NASA-NightSky-NOTICE.md`. The 6000 × 3000 ESO/S. Brunier panorama is an
+Intel-simulator fallback only; see `ESO-Panorama-NOTICE.md` (CC BY 4.0).
 The app does not measure naked-eye visibility or identify stars from camera images. AR alignment depends on the
 device's compass and attitude. The catalogue contains fixed stars, not planets.
 

@@ -48,14 +48,13 @@ struct NightSkyPanorama: UIViewRepresentable {
             guard let device = view.device else { onError("Детальная панорама недоступна на этом устройстве."); return }
             DispatchQueue.global(qos:.userInitiated).async { [weak self,weak view] in
                 do {
-                    guard let url = Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg") else { throw CocoaError(.fileNoSuchFile) }
                     let library = try device.makeLibrary(source:Self.shader,options:nil)
                     let descriptor = MTLRenderPipelineDescriptor()
                     descriptor.vertexFunction = library.makeFunction(name:"skyVertex")
                     descriptor.fragmentFunction = library.makeFunction(name:"skyFragment")
                     descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
                     let pipeline = try device.makeRenderPipelineState(descriptor:descriptor)
-                    let texture = try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
+                    let texture = try NightSkyTexture.load(device:device)
                     DispatchQueue.main.async {
                         guard let self,let view else { return }
                         self.pipeline = pipeline; self.texture = texture; self.queue = device.makeCommandQueue()

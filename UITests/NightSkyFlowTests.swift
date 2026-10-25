@@ -20,6 +20,21 @@ final class NightSkyFlowTests: XCTestCase {
         app.buttons["closeNightSky"].tap()
         XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
     }
+    func testGyroscopeAimsWithoutOpeningCameraAndReturnsToFreeView() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-night-sky-gyro"]; app.launch()
+        XCTAssertTrue(app.staticTexts["gyroSkyHint"].waitForExistence(timeout:15))
+        XCTAssertTrue(app.staticTexts["Объект в центре"].exists)
+        let canvas = app.descendants(matching:.any).matching(identifier:"nightSkyCanvas").firstMatch
+        XCTAssertTrue((canvas.value as? String ?? "").contains("camera off"))
+        XCTAssertFalse(app.sliders["nightTimeSlider"].exists)
+        app.segmentedControls["nightSkyMode"].buttons["Обзор"].tap()
+        XCTAssertTrue(app.sliders["nightTimeSlider"].waitForExistence(timeout:5))
+        app.segmentedControls["nightSkyMode"].buttons["Гироскоп"].tap()
+        XCTAssertTrue(app.staticTexts["gyroSkyHint"].waitForExistence(timeout:5))
+        XCTAssertTrue((canvas.value as? String ?? "").contains("camera off"))
+        app.buttons["closeNightSky"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
+    }
     func testKeyboardAndSimulatedReply() { checkConversation(suffix:"") }
     func testRearAimRemainsVisibleWhileTypingAndChangingAxis() { checkConversation(suffix:"-back") }
     private func checkConversation(suffix: String) {

@@ -1,6 +1,7 @@
 """Validate the archive, bundle metadata and device executable before release."""
 
 import argparse
+import hashlib
 import json
 import plistlib
 import stat
@@ -112,6 +113,16 @@ def verify_ipa(path):
                         for name in files), "Compiled SkyScene model is missing its weights")
             require(isinstance(plist.get("NSCameraUsageDescription"), str), "Missing camera usage description")
             require(prefix + "MMSegmentation-Apache-2.0.txt" in files, "Missing model license")
+        if version >= (1, 10, 0):
+            manifest = json.loads(archive.read(prefix + "night-sky-manifest.json"))
+            require((manifest["width"], manifest["height"], manifest["block"]) == (16384, 8192, 5), "Unexpected sky resolution")
+            require(len(manifest["levels"]) == 15, "Incomplete sky mip chain")
+            for index, level in enumerate(manifest["levels"]):
+                data = archive.read(prefix + f"night-sky-{index}.astc")
+                require(len(data) == level["bytes"], "Sky texture size mismatch")
+                require(hashlib.sha256(data).hexdigest() == level["sha256"], "Sky texture checksum mismatch")
+                require(data[:7] == bytes([0x13, 0xAB, 0xA1, 0x5C, 5, 5, 1]), "Invalid ASTC sky header")
+            require(prefix + "NASA-NightSky-NOTICE.md" in files, "Missing NASA source notice")
         return {"ipa_verified": True, "bundle": plist["CFBundleIdentifier"], "version": plist.get("CFBundleShortVersionString"),
                 "executable_bytes": len(binary), "platform": "arm64 iOS device", "crc_verified": True,
                 "sky_model_bundled": sky_model, "signed": bool(signed)}

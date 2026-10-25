@@ -28,6 +28,8 @@ targets:
         buildPhase: resources
       - path: LICENSES/ESO-Panorama-NOTICE.md
         buildPhase: resources
+      - path: LICENSES/NASA-NightSky-NOTICE.md
+        buildPhase: resources
       - path: LICENSES/HYG-CC-BY-SA-4.0.md
         buildPhase: resources
       - path: LICENSES/d3-celestial-BSD.txt
@@ -38,8 +40,8 @@ targets:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: PLS
-        CFBundleShortVersionString: "1.9.0"
-        CFBundleVersion: "22"
+        CFBundleShortVersionString: "1.10.0"
+        CFBundleVersion: "23"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

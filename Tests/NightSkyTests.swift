@@ -69,20 +69,41 @@ final class NightSkyTests: XCTestCase {
         let nearby = NightSkyMath.basis(azimuth:135,elevation:-10).z.negative
         XCTAssertEqual(try XCTUnwrap(ar.point(nearby)),try XCTUnwrap(free.point(nearby)))
     }
-    func testPanoramaHasNativeSixKDetailAndMetalShaderCompiles() throws {
-        let url = try XCTUnwrap(Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg"))
-        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL,nil))
-        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString:Any])
-        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int,6000)
-        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int,3000)
+    func testPanoramaHasNative16KDetailAndCompleteCompressedMips() throws {
+        var bytes = 0
+        for index in 0..<NightSkyTexture.levels {
+            let part = try NightSkyTexture.level(index)
+            XCTAssertEqual(part.width,max(1,16384 >> index))
+            XCTAssertEqual(part.height,max(1,8192 >> index))
+            bytes += part.data.count-16
+        }
+        XCTAssertLessThan(bytes,120_000_000)
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("Metal unavailable") }
         let library = try device.makeLibrary(source:NightSkyPanorama.Renderer.shader,options:nil)
         XCTAssertNotNil(library.makeFunction(name:"skyFragment"))
     }
+    func testGyroscopeTracksDeviceIncludingRollWithoutUsingCamera() throws {
+        let manual = NightSkyMath.basis(azimuth:0,elevation:60)
+        let first = NightSkyMath.basis(azimuth:215,elevation:30)
+        let moved = NightSkyMath.basis(azimuth:250,elevation:-25)
+        let rolled = DeviceBasis(x:moved.y,y:moved.x.negative,z:moved.z)
+        for pose in [first,moved,rolled] {
+            let basis = NightSkyMode.gyroscope.basis(manual:manual,measured:pose,motionReady:true)
+            XCTAssertEqual(basis.x.dot(pose.x),1,accuracy:1e-8)
+            XCTAssertEqual(basis.z.dot(pose.z),1,accuracy:1e-8)
+            let projection = NightProjection(basis:basis,size:.init(width:400,height:800),focal:300,minimumElevation:NightSkyMode.gyroscope.minimumElevation)
+            let center = try XCTUnwrap(projection.point(pose.z.negative))
+            XCTAssertEqual(center.x,200,accuracy:1e-8)
+            XCTAssertEqual(center.y,400,accuracy:1e-8)
+        }
+        XCTAssertFalse(NightSkyMode.gyroscope.usesCamera)
+        XCTAssertTrue(NightSkyMode.augmented.usesCamera)
+        let free = NightSkyMode.explore.basis(manual:manual,measured:moved,motionReady:true)
+        XCTAssertEqual(free.z.dot(manual.z),1,accuracy:1e-8)
+    }
     func testPanoramaProducesDetailedPixelsInsteadOfBlack() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
-        let url = try XCTUnwrap(Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg"))
-        let texture = try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
+        let texture = try NightSkyTexture.load(device:device)
         let library = try device.makeLibrary(source:NightSkyPanorama.Renderer.shader,options:nil)
         let pipeline = MTLRenderPipelineDescriptor()
         pipeline.vertexFunction = library.makeFunction(name:"skyVertex")

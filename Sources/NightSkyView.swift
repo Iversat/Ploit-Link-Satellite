@@ -13,7 +13,7 @@ private struct NightSkyContent: View {
     @StateObject private var camera = NightCamera()
     @State private var catalog: NightSkyCatalog?
     @State private var snapshot = NightSkySnapshot()
-    @State private var mode = 0
+    @State private var mode = NightSkyMode.explore
     @State private var yaw = 250.0
     @State private var pitch = 50.0
     @State private var fov = 72.0
@@ -34,8 +34,8 @@ private struct NightSkyContent: View {
     private var headingReliable: Bool { sensors.scanHeadingReady && sensors.motionReady && sensors.northIsTrue }
     private var skyKey: String { "\(catalog?.stars.count ?? 0)|\(observer?.latitude ?? 999)|\(observer?.longitude ?? 999)|\(Int(date.timeIntervalSince1970/10))" }
     private var currentBasis: DeviceBasis {
-        if mode == 1, sensors.motionReady, let basis = sensors.lastBasis { return basis }
-        return NightSkyMath.basis(azimuth:yaw,elevation:pitch)
+        mode.basis(manual:NightSkyMath.basis(azimuth:yaw,elevation:pitch),
+                   measured:sensors.lastBasis,motionReady:sensors.motionReady)
     }
     private var targetVector: DirectionVector? {
         guard let selected, let observer else { return nil }
@@ -47,54 +47,55 @@ private struct NightSkyContent: View {
         GeometryReader { geometry in
             ZStack {
                 Color(red:0.004,green:0.009,blue:0.022).ignoresSafeArea()
-                if mode == 1 {
+                if mode.usesCamera {
                     NightCameraPreview(camera:camera)
                     Color.black.opacity(0.15).ignoresSafeArea().allowsHitTesting(false)
                 } else {
                     LinearGradient(colors:[.black,Color(red:0.015,green:0.03,blue:0.06)],startPoint:.top,endPoint:.bottom).ignoresSafeArea()
                 }
-                TimelineView(.animation(minimumInterval:1.0/30,paused:mode == 0 || phase != .active)) { _ in
+                TimelineView(.animation(minimumInterval:1.0/30,paused:mode == .explore || phase != .active)) { _ in
                     GeometryReader { skyGeometry in
                         let size = skyGeometry.size
-                        let focal = mode == 1 && camera.running ? camera.focalLength(size:size) : Double(size.width)/(2*tan(fov * .pi/360))
+                        let focal = mode.usesCamera && camera.running ? camera.focalLength(size:size) : Double(size.width)/(2*tan(fov * .pi/360))
                         ZStack {
                             if let observer, showMilkyWay {
                                 NightSkyPanorama(basis:currentBasis,observer:observer,date:date,focal:focal,
-                                    augmented:mode == 1,enabled:showMilkyWay) { panoramaError = $0 }
+                                    augmented:mode.usesCamera,enabled:showMilkyWay) { panoramaError = $0 }
                                     .allowsHitTesting(false)
                             }
                             Canvas { context,size in
-                                draw(context:context,size:size,projection:.init(basis:currentBasis,size:size,focal:focal,minimumElevation:mode == 0 ? -90:-18))
+                                draw(context:context,size:size,projection:.init(basis:currentBasis,size:size,focal:focal,minimumElevation:mode.minimumElevation))
                             }
                         }
                     }
-                }.contentShape(Rectangle()).gesture(drag(width:geometry.size.width),including:mode == 0 ? .all:.none)
+                }.contentShape(Rectangle()).gesture(drag(width:geometry.size.width),including:mode == .explore ? .all:.none)
                     .simultaneousGesture(MagnificationGesture().onChanged { scale in
-                        guard mode == 0 else { return }
+                        guard !mode.usesCamera else { return }
                         if zoomStart == nil { zoomStart = fov }; fov = min(110,max(25,(zoomStart ?? 72)/scale))
                     }.onEnded { _ in zoomStart = nil })
                     .accessibilityLabel("Карта звёзд над вашим местоположением")
-                    .accessibilityValue("az \(Int(yaw)) el \(Int(pitch))")
+                    .accessibilityValue("az \(Int(yaw)) el \(Int(pitch)) camera \(camera.running ? "on":"off")")
                     .accessibilityIdentifier("nightSkyCanvas")
                 VStack(spacing:12) {
                     header
                     Picker("Режим неба",selection:$mode) {
-                        Text("Свободный обзор").tag(0); Text("AR · телефоном").tag(1)
+                        ForEach(NightSkyMode.allCases) { Text($0.title).tag($0) }
                     }.pickerStyle(.segmented).accessibilityIdentifier("nightSkyMode")
                     if observer == nil {
                         notice("Нужно ваше местоположение. Разрешите геопозицию или задайте координаты в настройках PLS.")
                     } else if let loadError { notice(loadError) }
                     else if let panoramaError { notice(panoramaError) }
-                    else if mode == 1, let message = camera.message { notice(message) }
-                    else if mode == 1 && !headingReliable { notice("Направление приблизительное: компас уточняется. Отойдите от металла; смотрите через заднюю камеру.") }
+                    else if mode.usesCamera, let message = camera.message { notice(message) }
+                    else if mode.followsPhone && !sensors.motionReady { notice("Датчики движения недоступны. Можно открыть свободный обзор.") }
+                    else if mode.followsPhone && !headingReliable { notice("Направление приблизительное: компас уточняется. Отойдите от металла и магнитных аксессуаров.") }
                     if let sunElevation, sunElevation > -18 {
                         notice(sunElevation > -6 ? "Сейчас светло: карта показывает расчётное небо. Звёзды лучше видны ночью." : "Сумерки: слабые звёзды и Млечный Путь могут быть не видны.")
                     }
                     Spacer(minLength:8)
                     if let selected {
-                        TimelineView(.animation(minimumInterval:1.0/15,paused:mode == 0 || phase != .active)) { _ in targetCard(selected) }
+                        TimelineView(.animation(minimumInterval:1.0/15,paused:mode == .explore || phase != .active)) { _ in targetCard(selected) }
                     }
-                    if mode == 0 && pitch < 0 {
+                    if mode == .explore && pitch < 0 {
                         Text("ПОД ГОРИЗОНТОМ · обзор сквозь Землю")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
                             .padding(8).background(.black.opacity(0.7),in:Capsule()).accessibilityIdentifier("belowSkyHorizon")
@@ -112,6 +113,11 @@ private struct NightSkyContent: View {
                 now = Date(timeIntervalSince1970:1792951200)
                 selected = .milkyWay
                 focus(.milkyWay)
+                if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky-gyro") {
+                    sensors.preview(azimuth:yaw,elevation:pitch,axis:.back)
+                    mode = .gyroscope
+                }
+                if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky-detail") { fov = 35; selected = nil }
                 if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky-below") { pitch = -35; selected = .galacticCenter }
             }
             #endif
@@ -125,7 +131,10 @@ private struct NightSkyContent: View {
             }.value
             guard !Task.isCancelled else { return }; snapshot = calculated
         }
-        .task(id:mode) { if mode == 1 { offset = 0; await camera.start() } else { camera.stop() } }
+        .onChange(of:mode) { _,value in if value.followsPhone { offset = 0 } }
+        .task(id:mode.usesCamera && phase == .active) {
+            if mode.usesCamera && phase == .active { await camera.start() } else { camera.stop() }
+        }
         .onReceive(Timer.publish(every:5,on:.main,in:.common).autoconnect()) { tick in
             guard phase == .active else { return }
             #if DEBUG
@@ -134,11 +143,10 @@ private struct NightSkyContent: View {
             now = tick
         }
         .onChange(of:phase) { _,value in if value != .active { camera.stop() } }
-        .task(id:phase) { if phase == .active && mode == 1 { await camera.start() } }
         .onDisappear { camera.stop() }
         .sheet(isPresented:$finder) {
             if let catalog {
-                NightObjectPicker(catalog:catalog) { target in selected = target; finder = false; if mode == 0 { focus(target) } }
+                NightObjectPicker(catalog:catalog) { target in selected = target; finder = false; if mode == .explore { focus(target) } }
             }
         }
         .sheet(isPresented:$information) { informationView }
@@ -165,21 +173,23 @@ private struct NightSkyContent: View {
                 Button { showLines.toggle() } label: { Image(systemName:"point.3.connected.trianglepath.dotted").foregroundStyle(showLines ? .cyan:.gray) }.accessibilityLabel("Линии созвездий")
                 Button { showNames.toggle() } label: { Image(systemName:"textformat").foregroundStyle(showNames ? .cyan:.gray) }.accessibilityLabel("Названия объектов")
                 Button { showMilkyWay.toggle() } label: { Image(systemName:"sparkles").foregroundStyle(showMilkyWay ? .cyan:.gray) }.accessibilityLabel("Детальная панорама неба")
-                Button { mode = 0; yaw = 0; pitch = 75; fov = 90; selected = nil } label: { Image(systemName:"arrow.up.to.line") }.accessibilityLabel("Посмотреть над собой")
+                Button { mode = .explore; yaw = 0; pitch = 75; fov = 90; selected = nil } label: { Image(systemName:"arrow.up.to.line") }.accessibilityLabel("Посмотреть над собой")
             }.buttonStyle(.plain).font(.system(size:17)).controlSize(.large)
             HStack {
                 Text(date.formatted(date:.abbreviated,time:.shortened)).font(.caption).monospacedDigit()
                 Spacer()
                 Button("Сейчас") { offset = 0; now = Date() }.font(.caption.weight(.semibold))
             }
-            if mode == 0 {
+            if mode == .explore {
                 Slider(value:$offset,in:-12...12,step:0.05).accessibilityLabel("Время неба").accessibilityIdentifier("nightTimeSlider")
                 Text("Полная сфера · вращайте пальцем · масштаб двумя").font(.caption2).foregroundStyle(.secondary)
+            } else if mode == .gyroscope {
+                Text("Камера выключена · направьте заднее стекло к звёздам. Масштаб — двумя пальцами.").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("gyroSkyHint")
             } else {
                 Text("Наведите заднюю камеру на небо. Расчётное направление зависит от точности компаса.").font(.caption2).foregroundStyle(.secondary)
             }
             if showMilkyWay {
-                Link("Панорама 6K · ESO/S. Brunier",destination:URL(string:"https://www.eso.org/public/images/eso0932a/")!)
+                Link("Карта 16K · NASA / Gaia",destination:URL(string:"https://svs.gsfc.nasa.gov/4851/")!)
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }.padding(16).satelliteGlass(in:RoundedRectangle(cornerRadius:24))
@@ -193,9 +203,9 @@ private struct NightSkyContent: View {
                 if angles.elevation < 0 { Text("Под горизонтом · с этой точки сейчас не видно").font(.subheadline).foregroundStyle(.orange) }
                 Group {
                     let error = acos(max(-1,min(1,vector.dot(currentBasis.z.negative))))*180 / .pi
-                    Text(error < 5 ? "Объект в центре" : "\(mode == 0 ? "Поверните карту к метке":"Поверните телефон к метке") · \(Int(error))°")
-                        .font(.subheadline).foregroundStyle(error < 5 && (mode == 0 || headingReliable) ? .green:.white)
-                    if mode == 0 { Button("Навести на объект") { focus(target) }.font(.caption.weight(.semibold)).accessibilityIdentifier("centerSkyTarget") }
+                    Text(error < 5 ? "Объект в центре" : "\(mode == .explore ? "Поверните карту к метке":"Поверните телефон к метке") · \(Int(error))°")
+                        .font(.subheadline).foregroundStyle(error < 5 && (mode == .explore || headingReliable) ? .green:.white)
+                    if mode == .explore { Button("Навести на объект") { focus(target) }.font(.caption.weight(.semibold)).accessibilityIdentifier("centerSkyTarget") }
                 }
             }
             Text(target.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
@@ -219,8 +229,8 @@ private struct NightSkyContent: View {
             List {
                 Section("Небо над выбранной точкой") {
                     Text("5070 звёзд до шестой звёздной величины. Положение рассчитано по координатам, времени и вращению Земли с поправкой на прецессию. Камера не распознаёт звёзды на изображении.")
-                    Text("AR использует заднюю камеру и датчики iPhone. Компас рядом с металлом, в помещении и возле магнитных аксессуаров может ошибаться. Свободный обзор работает без камеры.")
-                    Text("Детальная панорама 6000 × 3000 — ESO/S. Brunier, CC BY 4.0. Это фотографический фон, снятый в разные даты, а не текущая видимость. В свободном обзоре доступна вся сфера, включая звёзды под Землёй; ниже горизонта изображение затемнено. В AR видны ещё 18° ниже горизонта, но звёзды не сдвигаются относительно камеры. Облака, засветка и Луна влияют на реальную видимость. Планеты и Луна не рассчитываются.")
+                    Text("Гироскоп поворачивает карту вслед за iPhone без камеры; направляйте заднее стекло к объекту и следуйте метке в центре. AR дополнительно включает заднюю камеру. Компас рядом с металлом, в помещении и возле магнитных аксессуаров может ошибаться. Свободный обзор работает без камеры.")
+                    Text("Карта 16 384 × 8 192 — NASA/Goddard SVS; данные Gaia DR2: ESA/Gaia/DPAC. Она построена по каталогам звёзд, а не по текущему изображению камеры. Высокое разрешение встроено в приложение и работает без интернета. В свободном обзоре и режиме гироскопа доступна вся сфера, включая звёзды под Землёй; ниже горизонта изображение затемнено. В AR видны ещё 18° ниже горизонта, но звёзды не сдвигаются относительно камеры. Облака, засветка и Луна влияют на реальную видимость. Планеты и Луна не рассчитываются.")
                 }
                 Section("Каталоги") {
                     Text("Звёзды: HYG v4.1 · David Nash / Astronexus · CC BY-SA 4.0. Созвездия: d3-celestial · Olaf Frohn · BSD-3-Clause.")
@@ -279,7 +289,7 @@ private struct NightSkyContent: View {
                 context.draw(Text(name).font(.system(size:16,weight:.semibold)).foregroundStyle(.white.opacity(0.65)),at:p)
             }
         }
-        if let target = targetVector, mode == 0 || target.up >= sin(-18 * .pi/180) {
+        if let target = targetVector, !mode.usesCamera || target.up >= sin(-18 * .pi/180) {
             let p = projection.point(target)
             if let p, projection.visible(p,margin:-30) {
                 context.stroke(Path(ellipseIn:CGRect(x:p.x-15,y:p.y-15,width:30,height:30)),with:.color(.white),lineWidth:1)
@@ -292,7 +302,7 @@ private struct NightSkyContent: View {
                 arrow.draw(Text("↑").font(.system(size:32,weight:.light)).foregroundStyle(.white),at:.zero)
             }
         }
-        if mode == 1 || selected != nil {
+        if mode.followsPhone || selected != nil {
             let center = CGPoint(x:size.width/2,y:size.height/2)
             context.stroke(Path(ellipseIn:CGRect(x:center.x-3,y:center.y-3,width:6,height:6)),with:.color(.white.opacity(0.7)),lineWidth:1)
         }

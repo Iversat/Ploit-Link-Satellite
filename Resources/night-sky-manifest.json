@@ -1,0 +1,100 @@
+{
+  "source": "https://svs.gsfc.nasa.gov/4851/",
+  "width": 16384,
+  "height": 8192,
+  "block": 5,
+  "source_sha256": "20363595f309da9626111937d6d75555530937914527abbd6d81132764434aa7",
+  "exposure": 20.601743427556183,
+  "levels": [
+    {
+      "width": 16384,
+      "height": 8192,
+      "bytes": 85936064,
+      "sha256": "fe2fc95da3ee03b516e4bc70c775e61a74e545abb26c1089752b7b5fdfa01784"
+    },
+    {
+      "width": 8192,
+      "height": 4096,
+      "bytes": 21503696,
+      "sha256": "7810a227f94b2b3182d19af4a9b1e682fb8524dfef7facc488ada75c22bd7b71"
+    },
+    {
+      "width": 4096,
+      "height": 2048,
+      "bytes": 5379216,
+      "sha256": "ecc99b3057dace81b12d9674e5083c50cb30fc9684f64f8e428d8d95dfa3df68"
+    },
+    {
+      "width": 2048,
+      "height": 1024,
+      "bytes": 1344816,
+      "sha256": "a3dfe3ccbf9998e9266f2093df9e9744e4cd9f16ff7fd15a1f975558b366ea97"
+    },
+    {
+      "width": 1024,
+      "height": 512,
+      "bytes": 337856,
+      "sha256": "59c3980b6a5a4b52fd276e08ff5e3f36724a0148f583fe1681aed10e36b2fbc1"
+    },
+    {
+      "width": 512,
+      "height": 256,
+      "bytes": 85712,
+      "sha256": "fd049594cdbcc114a1f214f66b574379b9955058fafc8b0e94894c0342ec96ec"
+    },
+    {
+      "width": 256,
+      "height": 128,
+      "bytes": 21648,
+      "sha256": "bc3e9a3b51bc7252be246f60964244fd84a046d6e513958a21fd85bca867c438"
+    },
+    {
+      "width": 128,
+      "height": 64,
+      "bytes": 5424,
+      "sha256": "069c61b01badabdf5d9b1fe7e2f85749afe3e98770e2e989acc51da33fdcd3ae"
+    },
+    {
+      "width": 64,
+      "height": 32,
+      "bytes": 1472,
+      "sha256": "df5685680e176b4803676cd7600e4cb000b291d601ceebaa29128278400cf72f"
+    },
+    {
+      "width": 32,
+      "height": 16,
+      "bytes": 464,
+      "sha256": "b8571b5acfa4dfb7b513fad33cf0882a4b00dd8a93d038150a4edac783615108"
+    },
+    {
+      "width": 16,
+      "height": 8,
+      "bytes": 144,
+      "sha256": "72625a5883ae195d0c61bd83261de83074ec4a996ef2c841d43881ac0e3c39de"
+    },
+    {
+      "width": 8,
+      "height": 4,
+      "bytes": 48,
+      "sha256": "09088df781cf97c02bc92b5fc504fd928007ede7841964c00ca651829bf193f3"
+    },
+    {
+      "width": 4,
+      "height": 2,
+      "bytes": 32,
+      "sha256": "c9f8ca75970cc418cf02db3966fad74f3ebcd2a1e72419247325201afe5d7b0b"
+    },
+    {
+      "width": 2,
+      "height": 1,
+      "bytes": 32,
+      "sha256": "9edccfe6b5008621cb5d359ccbfa34ef03df945a3d55de1365274efca1d6e97e"
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "bytes": 32,
+      "sha256": "74e96df3da7ee718c96bb7f0ea31ba1ccf955f0a461dcccdf5ea25eb43f35dfc"
+    }
+  ]
+}
