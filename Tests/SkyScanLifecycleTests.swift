@@ -2,6 +2,17 @@ import XCTest
 @testable import PloitSatellite
 
 final class SkyScanLifecycleTests: XCTestCase {
+    @MainActor func testRoomGuidanceAndTargetsSurviveDownwardPoseAndUnreadyCompass() {
+        let scan = SkyScanController(torch:TestSkyScanTorch())
+        scan.previewRoom(headingAvailable:false)
+        XCTAssertLessThan(scan.direction?.elevation ?? 0,0)
+        XCTAssertFalse(scan.projectedTargets.isEmpty)
+        XCTAssertEqual(scan.scanInstruction,"ОСМОТРИТЕ СТЕНЫ, ОКНА И ПОТОЛОК")
+        XCTAssertFalse(scan.headingReady)
+        let cells = scan.survey.cells
+        scan.mark(.clear)
+        XCTAssertEqual(scan.survey.cells,cells,"Unreferenced rays cannot alter the geographic map.")
+    }
     @MainActor func testCollectionWaitsForMeasuredViewportAndResetsAcrossLifecycle() async {
         let scan = SkyScanController(torch:TestSkyScanTorch())
         let center = CGPoint(x:0.5,y:0.5)

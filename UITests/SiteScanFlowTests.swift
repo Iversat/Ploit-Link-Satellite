@@ -2,6 +2,17 @@ import XCTest
 
 final class SiteScanFlowTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    func testRoomScanShowsDotsAndPercentageBelowHorizon() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-site-capture-room"]; app.launch()
+        XCTAssertTrue(app.staticTexts["scanCoverage"].waitForExistence(timeout:10))
+        XCTAssertTrue(app.staticTexts["ОСМОТРИТЕ СТЕНЫ, ОКНА И ПОТОЛОК"].exists)
+        XCTAssertFalse(app.staticTexts["НАПРАВЬТЕ КАМЕРУ В НЕБО"].exists)
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"skyCaptureDots").firstMatch.exists)
+        app.buttons["finishSiteScan"].tap()
+        XCTAssertTrue(app.segmentedControls["skyViewMode"].waitForExistence(timeout:5))
+        app.buttons["closeSiteScan"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout:5))
+    }
     func testSkyModesPathAndNeutralInformationReturnToMap() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-site-scan"]; app.launch()
         XCTAssertTrue(app.buttons["closeSiteScan"].waitForExistence(timeout:10))

@@ -89,7 +89,7 @@ jobs:
               DEVICE="$SITE_DEVICE"
               SCENES="home-night home-day home-evening orbits-night site-intro site-scan site-capture site-info site-gyro radar-back-intro radar-top-intro radar-top-aligned"
               if [ "$TEST_SCOPE" = sky-survey ]; then
-                SCENES="home-night home-day earth-unavailable site-intro site-scan site-capture site-gyro site-face radar-back-intro"
+                SCENES="home-night site-intro site-scan site-capture site-capture-room site-capture-compass"
               fi
             else
               DEVICE=$(python3 -c 'import json,sys;d=json.load(open("build/available-simulators.json"));kind=sys.argv[1];runtime="iOS-18-" if kind=="ios18-pro-max" else "iOS-26-";name="iPhone 16 Pro Max" if kind=="ios18-pro-max" else "iPhone SE (3rd generation)";v=[x for k,a in sorted(d["devices"].items(),reverse=True) if runtime in k for x in a if x["name"]==name];assert v,"Required simulator unavailable: "+kind;print(v[0]["udid"])' "$KIND")
@@ -155,6 +155,7 @@ jobs:
               -only-testing:PloitSatelliteTests/SkySceneFusionTests
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testSkyModesPathAndNeutralInformationReturnToMap
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testCameraPreviewFinishesInspectsAndReturnsToTheSameMap
+              -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testRoomScanShowsDotsAndPercentageBelowHorizon
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testRearPhoneInstructionsShowAndDismiss
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testSkyDomeRotatesInBothDirectionsResetsAndReturnsHome
               -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testAutoToggleAndDateLabelExist

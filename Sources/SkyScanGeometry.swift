@@ -148,7 +148,7 @@ enum SkyScanInitialHeading {
                         trackingReady: Bool, headingReady: Bool) -> Double? {
         guard current == nil, collecting, trackingReady, headingReady, let direction,
               direction.azimuth.isFinite, direction.elevation.isFinite,
-              (0..<89).contains(direction.elevation) else { return current }
+              (-89..<89).contains(direction.elevation) else { return current }
         // An almost vertical optical axis has no stable azimuth.
         return (direction.azimuth.truncatingRemainder(dividingBy:360)+360).truncatingRemainder(dividingBy:360)
     }

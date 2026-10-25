@@ -46,7 +46,7 @@ struct SiteScanView: View {
     }
     private var capturePreview: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("--ui-screenshot-site-capture")
+        return ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--ui-screenshot-site-capture") })
         #else
         return false
         #endif
@@ -84,6 +84,8 @@ struct SiteScanView: View {
                     scan.preview(capture:capturePreview)
                     screen = capturePreview ? .scanning:.result
                     let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--ui-screenshot-site-capture-room") { scan.previewRoom() }
+                    if arguments.contains("--ui-screenshot-site-capture-compass") { scan.previewRoom(headingAvailable:false) }
                     if arguments.contains("--ui-screenshot-site-intro") { screen = .introduction }
                     if arguments.contains("--ui-screenshot-site-info") { information = true }
                     if arguments.contains("--ui-screenshot-site-gyro") || arguments.contains("--ui-screenshot-site-face") { followsPhone = true }
@@ -136,7 +138,7 @@ struct SiteScanView: View {
                 Text("Найдите открытое небо").font(.system(size:30,weight:.semibold))
                 Text("Проверьте обзор из точки, где будет находиться антенна.").font(.subheadline).foregroundStyle(.white.opacity(0.6))
             }
-            instruction("1",title:"Поднимите камеру",detail:"Останьтесь на одном месте и направьте заднюю камеру в небо.")
+            instruction("1",title:"Осмотрите место",detail:"Останьтесь на одном месте. В комнате осмотрите стены, окна и потолок; на улице — препятствия и небо.")
             instruction("2",title:"Соберите точки",detail:"Медленно поворачивайте телефон. Точки фиксируются в центральной области камеры.")
             instruction("3",title:"Проверьте карту ИИ",detail:"Камера распознаёт небо и препятствия, LiDAR дополняет близкие поверхности. Сомнительные области можно отметить вручную.")
             VStack(alignment:.leading,spacing:10) {
@@ -308,7 +310,7 @@ struct SiteScanView: View {
                     HStack(spacing:10) {
                         Button { scan.mark(.clear) } label: { Label("Небо",systemImage:"checkmark").frame(maxWidth:.infinity).frame(height:44).satelliteGlass(in:Capsule(),interactive:true) }.accessibilityIdentifier("markSkyClear")
                         Button { scan.mark(.blocked) } label: { Label("Препятствие",systemImage:"xmark").frame(maxWidth:.infinity).frame(height:44).satelliteGlass(in:Capsule(),interactive:true) }.accessibilityIdentifier("markSkyBlocked")
-                    }.font(.system(size:13,weight:.medium)).disabled(scan.direction == nil || !scan.running)
+                    }.font(.system(size:13,weight:.medium)).disabled(scan.direction == nil || !scan.running || !scan.headingReady)
                 }
                 primary(screen == .inspecting ? "К карте":"Показать результат",id:"finishSiteScan") { captureTask?.cancel(); scan.finish(); screen = .result }
             }.padding(.horizontal,20).padding(.vertical,12).background(cameraControlMeasurement("bottom"))
@@ -326,11 +328,10 @@ struct SiteScanView: View {
                 Circle().stroke(.black.opacity(0.35),lineWidth:3)
                 Circle().trim(from:0,to:screen == .inspecting ? 1:scan.coverageFraction).stroke(.white,style:StrokeStyle(lineWidth:3,lineCap:.round)).rotationEffect(.degrees(-90))
                 if screen == .inspecting { Image(systemName:"plus").font(.system(size:32,weight:.ultraLight)) }
-                else if let direction = scan.direction, direction.elevation >= 0 { Text("\(Int(scan.coverageFraction*100))%").font(.system(size:32,weight:.semibold)).monospacedDigit().accessibilityIdentifier("scanCoverage") }
-                else { Image(systemName:"arrow.up").font(.system(size:52,weight:.light)) }
+                else { Text("\(Int(scan.coverageFraction*100))%").font(.system(size:32,weight:.semibold)).monospacedDigit().accessibilityIdentifier("scanCoverage") }
             }.frame(width:diameter,height:diameter).position(x:size.width/2,y:size.height/2)
             VStack(spacing:10) {
-                Text(screen == .inspecting ? "ПОВОРАЧИВАЙТЕ ТЕЛЕФОН" : scan.direction == nil ? "НАПРАВЬТЕ КАМЕРУ В НЕБО" : "СОБЕРИТЕ ТОЧКИ ВОКРУГ СЕБЯ").font(.system(size:12,weight:.semibold)).tracking(1)
+                Text(screen == .inspecting ? "ПОВОРАЧИВАЙТЕ ТЕЛЕФОН" : scan.scanInstruction).font(.system(size:12,weight:.semibold)).tracking(1).accessibilityIdentifier("scanInstruction")
                 if size.height >= 700 { Text(screen == .inspecting ? "Белое — открыто · красное — препятствие" : "Процент — охват камеры, не качество сигнала").font(.caption).foregroundStyle(.white.opacity(0.75)) }
             }.multilineTextAlignment(.center).frame(width:size.width-48)
                 .position(x:size.width/2,y:size.height/2 + (size.height < 700 ? -diameter/2-38:diameter/2+50))
@@ -339,11 +340,11 @@ struct SiteScanView: View {
     private var cameraCompass: some View {
         ZStack {
             Circle().fill(.black.opacity(0.65)).frame(width:48,height:48)
-            ForEach(0..<4) { index in
+            if scan.headingReady { ForEach(0..<4) { index in
                 Text(["С","В","Ю","З"][index]).font(.system(size:8,weight:.semibold)).offset(y:-17).rotationEffect(.degrees(Double(index)*90-(scan.direction?.azimuth ?? 0)))
-            }
-            Image(systemName:"location.north.fill").font(.system(size:10))
-        }.frame(width:48,height:48).accessibilityLabel("Азимут \(Int(scan.direction?.azimuth ?? 0)) градусов")
+            } }
+            Image(systemName:scan.headingReady ? "location.north.fill":"location.slash").font(.system(size:10))
+        }.frame(width:48,height:48).accessibilityLabel(scan.headingReady ? "Азимут \(Int(scan.direction?.azimuth ?? 0)) градусов":"Компас уточняет направление")
     }
     private func instruction(_ number: String,title: String,detail: String) -> some View {
         HStack(alignment:.top,spacing:16) {

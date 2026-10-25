@@ -92,8 +92,20 @@ enum SkySceneClassifierError: Error {
 /// Model and Vision request objects are confined to this serial queue. Camera
 /// frames are retained only until their inference completes and are never saved.
 final class SkySceneClassifier: @unchecked Sendable {
+    static let shared = SkySceneClassifier()
     private let queue = DispatchQueue(label:"ru.ploit.sky-scene.inference",qos:.utility)
     private var model: VNCoreMLModel?
+
+    /// Load the bundled model once per application process, away from the UI.
+    /// Camera screens reuse this instance instead of repeatedly loading weights.
+    func prepare() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
+            queue.async { [self] in
+                do { _ = try loadModel(); continuation.resume() }
+                catch { continuation.resume(throwing:error) }
+            }
+        }
+    }
 
     func classify(_ pixelBuffer: CVPixelBuffer) async throws -> SkySceneClassification {
         try Task.checkCancellation()

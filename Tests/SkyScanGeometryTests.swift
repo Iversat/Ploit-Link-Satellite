@@ -126,11 +126,12 @@ final class SkyScanGeometryTests: XCTestCase {
         XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:false,headingReady:true))
         XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:true,headingReady:false))
         XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:false,trackingReady:true,headingReady:true))
-        for elevation in [-1.0,90,.nan] {
+        for elevation in [-90.0,90,.nan] {
             XCTAssertNil(SkyScanInitialHeading.capture(current:nil,direction:.init(azimuth:10,elevation:elevation),collecting:true,trackingReady:true,headingReady:true))
         }
         let initial = SkyScanInitialHeading.capture(current:nil,direction:pose,collecting:true,trackingReady:true,headingReady:true)
         XCTAssertEqual(initial,350)
+        XCTAssertEqual(SkyScanInitialHeading.capture(current:nil,direction:.init(azimuth:225,elevation:-8),collecting:true,trackingReady:true,headingReady:true),225)
         XCTAssertEqual(SkyScanInitialHeading.capture(current:initial,direction:.init(azimuth:80,elevation:40),collecting:true,trackingReady:true,headingReady:true),350)
     }
     func testTrueNorthEastAndZenithUseARWorldAxes() throws {

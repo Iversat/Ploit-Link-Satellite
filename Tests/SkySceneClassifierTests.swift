@@ -78,6 +78,8 @@ final class SkySceneClassifierTests: XCTestCase {
         let comparison = try XCTUnwrap(UIImage(contentsOfFile:roomURL.path)?.cgImage)
         let room = try XCTUnwrap(comparison.cropping(to:CGRect(x:0,y:0,width:768,height:512)))
         let classifier = SkySceneClassifier()
+        try await classifier.prepare()
+        try await classifier.prepare()
         let outdoor = try await classifier.classify(rawCameraBuffer(from:house))
         let indoor = try await classifier.classify(rawCameraBuffer(from:room))
         func sample(_ mask: SkySceneClassification, _ x:Double, _ y:Double) -> SkySceneSample {

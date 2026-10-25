@@ -62,7 +62,7 @@ enum SkyScanLocation {
     @Published private(set) var survey = SkySurvey()
     @Published private(set) var direction: SkyDirection?
     @Published private(set) var running = false
-    @Published private(set) var message = "Обведите камерой небо с места установки антенны."
+    @Published private(set) var message = "Осмотрите камерой место установки антенны."
     @Published private(set) var moved = false
     @Published private(set) var isSnapshot = false
     @Published private(set) var collecting = false
@@ -83,7 +83,13 @@ enum SkyScanLocation {
     @Published private(set) var sceneEnvironment: SkyScanEnvironment = .automatic
     var coveredTargetCount: Int { survey.coveredCellCount }
     let totalTargetCount = SkySurvey.columns * SkySurvey.rows
-    var headingReady = false
+    @Published var headingReady = false {
+        didSet { if oldValue != headingReady { analysisEpoch = UUID(); dwell.reset() } }
+    }
+    var scanInstruction: String {
+        if direction == nil { return "МЕДЛЕННО ПОВЕРНИТЕ ТЕЛЕФОН" }
+        return sceneEnvironment == .indoors ? "ОСМОТРИТЕ СТЕНЫ, ОКНА И ПОТОЛОК":"СОБЕРИТЕ ТОЧКИ ВОКРУГ СЕБЯ"
+    }
     var collectionViewport = CGRect.zero
     let session = ARSession()
     let supportsDepth = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
@@ -102,7 +108,7 @@ enum SkyScanLocation {
     private var feedback = SkyScanCollectionFeedback()
     private var collectionAnimation = SkyScanCollectionAnimation()
     private var collectionHaptic: UIImpactFeedbackGenerator?
-    private let classifier = SkySceneClassifier()
+    private let classifier = SkySceneClassifier.shared
     private var analysisTask: Task<Void,Never>?
     private var lastAnalysis: TimeInterval = 0
     private var environmentEstimate = SkySceneEnvironmentEstimate()
@@ -148,7 +154,7 @@ enum SkyScanLocation {
             scanObserver = observer; isSnapshot = false; startAzimuth = nil
             analysedFrames = 0; environmentEstimate = SkySceneEnvironmentEstimate()
             sceneEnvironment = environment; lastAnalysis = 0
-            analysisStatus = "Подготовка ИИ на устройстве…"
+            analysisStatus = "ИИ на устройстве · ожидаем кадр камеры"
         }
         feedback.reset(); collectionAnimation.reset()
         collectionHaptic = collecting ? UIImpactFeedbackGenerator(style:.soft):nil
@@ -160,7 +166,7 @@ enum SkyScanLocation {
         session.run(configuration, options:collecting ? [.resetTracking,.removeExistingAnchors]:[])
         running = true
         requestTorch(false)
-        message = collecting ? "Медленно обведите небо камерой: точки собираются после короткой остановки."
+        message = collecting ? "Медленно осмотрите пространство вокруг: стены, окна и область над горизонтом."
             : "Осмотр сохранённой карты. Оставайтесь в исходной точке: после паузы камера уточняет привязку."
     }
     func stop() {
@@ -226,12 +232,8 @@ enum SkyScanLocation {
         guard case .normal = frame.camera.trackingState else {
             analysisEpoch = UUID()
             direction = nil; projectedTargets = []; dwell.reset()
+            if analysedFrames == 0 { analysisStatus = "ИИ ожидает стабильный кадр камеры" }
             message = "Медленно поверните телефон: камера уточняет положение."; return
-        }
-        guard headingReady else {
-            analysisEpoch = UUID()
-            direction = nil; projectedTargets = []; dwell.reset()
-            message = "Нужен точный компас: отойдите от металла и разрешите геопозицию."; return
         }
         let transform = frame.camera.transform
         let position = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
@@ -248,7 +250,9 @@ enum SkyScanLocation {
         let sampleDue = frame.timestamp - lastSample >= 0.2
         if sampleDue {
             lastSample = frame.timestamp
-            message = "\(collecting ? "Сбор точек" : "Осмотр снимка") · \(Int(direction?.azimuth ?? 0))° азимут · \(Int(direction?.elevation ?? 0))° высота"
+            message = headingReady
+                ? "\(collecting ? "Сбор точек" : "Осмотр снимка") · \(Int(direction?.azimuth ?? 0))° азимут · \(Int(direction?.elevation ?? 0))° высота"
+                : "Точки видны, ИИ работает. Для записи направлений нужен компас: отойдите от металла и разрешите геопозицию."
         }
         var result = survey
         let cameraRotation = simd_float3x3(SIMD3(transform.columns.0.x,transform.columns.0.y,transform.columns.0.z),
@@ -267,17 +271,13 @@ enum SkyScanLocation {
             guard !result.collectedCells.contains(index), SkyScanCollectionArea.contains(point,visible:collectionViewport) else { return nil }
             return index
         })
-        let progress = dwell.update(ids:candidates,at:frame.timestamp,enabled:collecting)
+        let progress = dwell.update(ids:candidates,at:frame.timestamp,enabled:collecting && headingReady)
         let completed = Set(progress.filter { $0.value >= 1 }.map(\.key))
         let newlyCollected = collecting ? result.collect(completed):[]
         collectionAnimation.update(newIDs:newlyCollected,at:frame.timestamp,enabled:collecting && !isPreview)
         if feedback.shouldPulse(newCount:newlyCollected.count,at:frame.timestamp,collecting:collecting,preview:isPreview) {
             collectionHaptic?.impactOccurred(intensity:0.75)
             collectionHaptic?.prepare()
-        }
-        if let direction, direction.elevation < 0 {
-            self.direction = nil
-            if sampleDue { message = "Поднимите камеру выше горизонта." }
         }
         if collecting && !newlyCollected.isEmpty {
             survey = result
@@ -294,6 +294,8 @@ enum SkyScanLocation {
         guard collecting, !isPreview, analysisTask == nil, frame.timestamp-lastAnalysis >= 0.65 else { return }
         lastAnalysis = frame.timestamp
         let token = startToken, epoch = analysisEpoch, timestamp = frame.timestamp
+        let mappingReady = headingReady
+        if analysedFrames == 0 { analysisStatus = "ИИ на устройстве · анализ первого кадра…" }
         let pixelBuffer = frame.capturedImage
         // These rays and depth samples belong to the SAME frame as the image.
         // Later phone rotations must never move an old inference to a new direction.
@@ -304,12 +306,12 @@ enum SkyScanLocation {
             do {
                 let classification = try await classifier.classify(pixelBuffer)
                 guard !Task.isCancelled, let self, self.startToken == token, self.analysisEpoch == epoch,
-                      self.running, self.collecting, !self.moved, self.headingReady else { return }
+                      self.running, self.collecting, !self.moved else { return }
                 self.environmentEstimate.update(indoorEvidence:classification.indoorEvidence)
                 self.sceneEnvironment = self.environmentEstimate.resolved(selection:self.environment)
                 var updated = self.survey
                 if self.sceneEnvironment != .outdoors { updated.restrictOpenSkyToApertures() }
-                for ray in rays {
+                for ray in rays where mappingReady && self.headingReady {
                     let sample = classification.sample(rawX:ray.rawX,rawY:ray.rawY)
                     let state = SkySceneFusion.state(sample:sample,distance:ray.distance,depthReliable:ray.depthReliable,
                                                      environment:self.sceneEnvironment)
@@ -328,7 +330,7 @@ enum SkyScanLocation {
                 // Depth still contributes when a model is unavailable. Never replace
                 // failed ML with a colour heuristic claiming to recognize the sky.
                 var updated = self.survey
-                for ray in rays where ray.depthReliable {
+                for ray in rays where ray.depthReliable && mappingReady && self.headingReady {
                     if let distance = ray.distance, distance.isFinite, (0.2...6).contains(distance) {
                         updated.applyAnalysis(index:ray.index,state:.blocked,timestamp:timestamp)
                     }
@@ -375,6 +377,13 @@ enum SkyScanLocation {
     func session(_ session: ARSession, didFailWithError error: Error) { invalidate("Сканирование остановлено. Попробуйте ещё раз при лучшем освещении.") }
     func sessionWasInterrupted(_ session: ARSession) { invalidate("Сканирование прервано. Начните заново с той же точки.") }
     #if DEBUG
+    func previewRoom(headingAvailable: Bool = true) {
+        preview(capture:true)
+        environment = .indoors
+        headingReady = headingAvailable
+        direction = .init(azimuth:135,elevation:-8)
+        analysisStatus = "ИИ · помещение · пример карты"
+    }
     func preview(capture: Bool = false, collecting: Bool = true) {
         stop()
         isPreview = true; headingReady = true

@@ -9,10 +9,10 @@ root = Path(__file__).resolve().parents[1]
 folder = root / 'Resources/Assets.xcassets/AppIcon.appiconset'
 folder.mkdir(parents=True, exist_ok=True)
 scale = 16
-# Preserve the approved vector, enlarging only its app-icon presentation.
-# The white silhouette's centroid includes the orbit arc and the panel cutouts.
-icon_scale = 1.14
-optical_center = (131.60, 134.05)
+# Center the satellite body itself, not the combined satellite-and-arc centroid.
+# Keep equal body margins; the separate orbit arc must not push it up/left.
+icon_scale = 1.04
+optical_center = (128.0, 128.0)
 image = Image.new('RGB', (256 * scale, 256 * scale), '#030507')
 draw = ImageDraw.Draw(image)
 
