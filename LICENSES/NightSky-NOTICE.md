@@ -28,9 +28,9 @@ Changes: combine and normalize Russian labels and line figures, omit unused
 languages, give the two Serpens figures distinct IDs, convert GeoJSON to arrays.
 The two Serpens figures are retained separately (89 figures for 88 constellations).
 
-The Milky Way is an original contrast-enhanced schematic band aligned with the
-IAU J2000 Galactic coordinate plane, with illustrative brightness and dust. The app does not measure naked-eye
-visibility or identify stars from camera images. AR alignment depends on the
+The Milky Way background is the 6000 × 3000 photographic ESO/S. Brunier panorama;
+see `ESO-Panorama-NOTICE.md` for its separate CC BY 4.0 license and source.
+The app does not measure naked-eye visibility or identify stars from camera images. AR alignment depends on the
 device's compass and attitude. The catalogue contains fixed stars, not planets.
 
 Sidereal rotation reference: https://aa.usno.navy.mil/faq/GAST

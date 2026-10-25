@@ -1,4 +1,6 @@
 import XCTest
+import ImageIO
+import Metal
 @testable import PloitSatellite
 
 final class NightSkyTests: XCTestCase {
@@ -32,7 +34,6 @@ final class NightSkyTests: XCTestCase {
         XCTAssertEqual(Set(catalog.constellations.map(\.id)).count,catalog.constellations.count)
         XCTAssertEqual(catalog.constellations.first { $0.id == "UMa" }?.name,"Большая Медведица")
         XCTAssertNotNil(catalog.constellations.first { $0.id == "UMi" })
-        XCTAssertGreaterThan(MilkyWayBand.samples.count,1000)
         XCTAssertTrue(catalog.stars.allSatisfy { $0.magnitude <= 6 && $0.ra.isFinite && (-90...90).contains($0.dec) })
     }
     func testWholeSkySnapshotsRemainFiniteAndPolygonsClipToViewport() throws {
@@ -56,6 +57,26 @@ final class NightSkyTests: XCTestCase {
             let pole = NightSkyMath.precess(ra:0,dec:dec,at:Date(timeIntervalSince1970:1792951200))
             XCTAssertTrue(pole.ra.isFinite && pole.dec.isFinite)
         }
+    }
+    func testFullSphereAndExpandedARHorizonKeepDirectionsUnchanged() throws {
+        let basis = NightSkyMath.basis(azimuth:135,elevation:-30)
+        let free = NightProjection(basis:basis,size:CGSize(width:400,height:800),focal:300,minimumElevation:-90)
+        let point = try XCTUnwrap(free.point(basis.z.negative))
+        XCTAssertEqual(point.x,200,accuracy:0.001); XCTAssertEqual(point.y,400,accuracy:0.001)
+        let ar = NightProjection(basis:basis,size:CGSize(width:400,height:800),focal:300,minimumElevation:-18)
+        XCTAssertNil(ar.point(basis.z.negative))
+        let nearby = NightSkyMath.basis(azimuth:135,elevation:-10).z.negative
+        XCTAssertEqual(try XCTUnwrap(ar.point(nearby)),try XCTUnwrap(free.point(nearby)))
+    }
+    func testPanoramaHasNativeSixKDetailAndMetalShaderCompiles() throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource:"night-sky-panorama",withExtension:"jpg"))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL,nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString:Any])
+        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int,6000)
+        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int,3000)
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("Metal unavailable") }
+        let library = try device.makeLibrary(source:NightSkyPanorama.Renderer.shader,options:nil)
+        XCTAssertNotNil(library.makeFunction(name:"skyFragment"))
     }
     @MainActor func testDemoChatValidatesInputAndNeverClaimsRadioDelivery() async throws {
         let suite = "PLS-chat-test-\(UUID())"

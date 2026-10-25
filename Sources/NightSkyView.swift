@@ -28,6 +28,7 @@ private struct NightSkyContent: View {
     @State private var information = false
     @State private var selected: NightTarget?
     @State private var loadError: String?
+    @State private var panoramaError: String?
     private var date: Date { now.addingTimeInterval(offset*3600) }
     private var observer: Observer? { model.observer }
     private var headingReliable: Bool { sensors.scanHeadingReady && sensors.motionReady && sensors.northIsTrue }
@@ -53,9 +54,19 @@ private struct NightSkyContent: View {
                     LinearGradient(colors:[.black,Color(red:0.015,green:0.03,blue:0.06)],startPoint:.top,endPoint:.bottom).ignoresSafeArea()
                 }
                 TimelineView(.animation(minimumInterval:1.0/30,paused:mode == 0 || phase != .active)) { _ in
-                    Canvas { context,size in
+                    GeometryReader { skyGeometry in
+                        let size = skyGeometry.size
                         let focal = mode == 1 && camera.running ? camera.focalLength(size:size) : Double(size.width)/(2*tan(fov * .pi/360))
-                        draw(context:context,size:size,projection:.init(basis:currentBasis,size:size,focal:focal))
+                        ZStack {
+                            if let observer, showMilkyWay {
+                                NightSkyPanorama(basis:currentBasis,observer:observer,date:date,focal:focal,
+                                    augmented:mode == 1,enabled:showMilkyWay) { panoramaError = $0 }
+                                    .allowsHitTesting(false)
+                            }
+                            Canvas { context,size in
+                                draw(context:context,size:size,projection:.init(basis:currentBasis,size:size,focal:focal,minimumElevation:mode == 0 ? -90:-18))
+                            }
+                        }
                     }
                 }.contentShape(Rectangle()).gesture(drag(width:geometry.size.width),including:mode == 0 ? .all:.none)
                     .simultaneousGesture(MagnificationGesture().onChanged { scale in
@@ -73,6 +84,7 @@ private struct NightSkyContent: View {
                     if observer == nil {
                         notice("Нужно ваше местоположение. Разрешите геопозицию или задайте координаты в настройках PLS.")
                     } else if let loadError { notice(loadError) }
+                    else if let panoramaError { notice(panoramaError) }
                     else if mode == 1, let message = camera.message { notice(message) }
                     else if mode == 1 && !headingReliable { notice("Направление приблизительное: компас уточняется. Отойдите от металла; смотрите через заднюю камеру.") }
                     if let sunElevation, sunElevation > -18 {
@@ -81,6 +93,11 @@ private struct NightSkyContent: View {
                     Spacer(minLength:8)
                     if let selected {
                         TimelineView(.animation(minimumInterval:1.0/15,paused:mode == 0 || phase != .active)) { _ in targetCard(selected) }
+                    }
+                    if mode == 0 && pitch < 0 {
+                        Text("ПОД ГОРИЗОНТОМ · обзор сквозь Землю")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                            .padding(8).background(.black.opacity(0.7),in:Capsule()).accessibilityIdentifier("belowSkyHorizon")
                     }
                     controls
                 }.padding(.horizontal,20).padding(.top,8).padding(.bottom,8)
@@ -91,10 +108,11 @@ private struct NightSkyContent: View {
             do { catalog = try await Task.detached(priority:.userInitiated) { try NightSkyCatalog.load() }.value }
             catch { loadError = "Не удалось прочитать встроенный каталог звёзд." }
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky") {
+            if ProcessInfo.processInfo.arguments.contains(where:{ $0.hasPrefix("--ui-screenshot-night-sky") }) {
                 now = Date(timeIntervalSince1970:1792951200)
                 selected = .milkyWay
                 focus(.milkyWay)
+                if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky-below") { pitch = -35; selected = .galacticCenter }
             }
             #endif
         }
@@ -111,7 +129,7 @@ private struct NightSkyContent: View {
         .onReceive(Timer.publish(every:5,on:.main,in:.common).autoconnect()) { tick in
             guard phase == .active else { return }
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-screenshot-night-sky") { return }
+            if ProcessInfo.processInfo.arguments.contains(where:{ $0.hasPrefix("--ui-screenshot-night-sky") }) { return }
             #endif
             now = tick
         }
@@ -146,7 +164,7 @@ private struct NightSkyContent: View {
                 Spacer()
                 Button { showLines.toggle() } label: { Image(systemName:"point.3.connected.trianglepath.dotted").foregroundStyle(showLines ? .cyan:.gray) }.accessibilityLabel("Линии созвездий")
                 Button { showNames.toggle() } label: { Image(systemName:"textformat").foregroundStyle(showNames ? .cyan:.gray) }.accessibilityLabel("Названия объектов")
-                Button { showMilkyWay.toggle() } label: { Image(systemName:"sparkles").foregroundStyle(showMilkyWay ? .cyan:.gray) }.accessibilityLabel("Млечный Путь")
+                Button { showMilkyWay.toggle() } label: { Image(systemName:"sparkles").foregroundStyle(showMilkyWay ? .cyan:.gray) }.accessibilityLabel("Детальная панорама неба")
                 Button { mode = 0; yaw = 0; pitch = 75; fov = 90; selected = nil } label: { Image(systemName:"arrow.up.to.line") }.accessibilityLabel("Посмотреть над собой")
             }.buttonStyle(.plain).font(.system(size:17)).controlSize(.large)
             HStack {
@@ -156,9 +174,13 @@ private struct NightSkyContent: View {
             }
             if mode == 0 {
                 Slider(value:$offset,in:-12...12,step:0.05).accessibilityLabel("Время неба").accessibilityIdentifier("nightTimeSlider")
-                Text("Вращайте одним пальцем · масштаб двумя · время ±12 часов").font(.caption2).foregroundStyle(.secondary)
+                Text("Полная сфера · вращайте пальцем · масштаб двумя").font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text("Наведите заднюю камеру на небо. Расчётное направление зависит от точности компаса.").font(.caption2).foregroundStyle(.secondary)
+            }
+            if showMilkyWay {
+                Link("Панорама 6K · ESO/S. Brunier",destination:URL(string:"https://www.eso.org/public/images/eso0932a/")!)
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }.padding(16).satelliteGlass(in:RoundedRectangle(cornerRadius:24))
     }
@@ -168,11 +190,12 @@ private struct NightSkyContent: View {
             if let vector = targetVector {
                 let angles = NightSkyMath.angles(vector)
                 Text(String(format:"Азимут %.0f° · высота %.0f°",angles.azimuth,angles.elevation)).font(.caption).foregroundStyle(.secondary)
-                if angles.elevation < 0 { Text("Сейчас под горизонтом").font(.subheadline).foregroundStyle(.orange) }
-                else if mode == 1 {
+                if angles.elevation < 0 { Text("Под горизонтом · с этой точки сейчас не видно").font(.subheadline).foregroundStyle(.orange) }
+                if mode == 1 || mode == 0 {
                     let error = acos(max(-1,min(1,vector.dot(currentBasis.z.negative))))*180 / .pi
-                    Text(error < 5 ? "Объект в центре" : "Поверните телефон к метке · \(Int(error))°")
-                        .font(.subheadline).foregroundStyle(error < 5 && headingReliable ? .green:.white)
+                    Text(error < 5 ? "Объект в центре" : "\(mode == 0 ? "Поверните карту к метке":"Поверните телефон к метке") · \(Int(error))°")
+                        .font(.subheadline).foregroundStyle(error < 5 && (mode == 0 || headingReliable) ? .green:.white)
+                    if mode == 0 { Button("Навести на объект") { focus(target) }.font(.caption.weight(.semibold)).accessibilityIdentifier("centerSkyTarget") }
                 }
             }
             Text(target.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
@@ -181,14 +204,14 @@ private struct NightSkyContent: View {
     private func focus(_ target: NightTarget) {
         guard let observer else { return }
         let v = NightSkyMath.vector(ra:target.ra,dec:target.dec,observer:observer,date:date)
-        let a = NightSkyMath.angles(v); yaw = a.azimuth; pitch = max(5,a.elevation); fov = 72
+        let a = NightSkyMath.angles(v); yaw = a.azimuth; pitch = min(89,max(-89,a.elevation)); fov = 72
     }
     private func drag(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance:3).onChanged { value in
             if dragStart == nil { dragStart = (yaw,pitch) }
             guard let start = dragStart else { return }
             yaw = AimMath.wrap(start.0-Double(value.translation.width)/Double(max(1,width))*fov)
-            pitch = min(89,max(-60,start.1+Double(value.translation.height)/Double(max(1,width))*fov))
+            pitch = min(89,max(-89,start.1+Double(value.translation.height)/Double(max(1,width))*fov))
         }.onEnded { _ in dragStart = nil }
     }
     private var informationView: some View {
@@ -197,7 +220,7 @@ private struct NightSkyContent: View {
                 Section("Небо над выбранной точкой") {
                     Text("5070 звёзд до шестой звёздной величины. Положение рассчитано по координатам, времени и вращению Земли с поправкой на прецессию. Камера не распознаёт звёзды на изображении.")
                     Text("AR использует заднюю камеру и датчики iPhone. Компас рядом с металлом, в помещении и возле магнитных аксессуаров может ошибаться. Свободный обзор работает без камеры.")
-                    Text("Млечный Путь показан условно усиленным. Облака, засветка и Луна влияют на реальную видимость; карта не является её измерением. Планеты и Луна в этот каталог не входят.")
+                    Text("Детальная панорама 6000 × 3000 — ESO/S. Brunier, CC BY 4.0. Это фотографический фон, снятый в разные даты, а не текущая видимость. В свободном обзоре доступна вся сфера, включая звёзды под Землёй; ниже горизонта изображение затемнено. В AR видны ещё 18° ниже горизонта, но звёзды не сдвигаются относительно камеры. Облака, засветка и Луна влияют на реальную видимость. Планеты и Луна не рассчитываются.")
                 }
                 Section("Каталоги") {
                     Text("Звёзды: HYG v4.1 · David Nash / Astronexus · CC BY-SA 4.0. Созвездия: d3-celestial · Olaf Frohn · BSD-3-Clause.")
@@ -211,22 +234,6 @@ private struct NightSkyContent: View {
         guard let catalog, snapshot.stars.count == catalog.stars.count else { return }
         var context = context
         context.clip(to:Path(CGRect(origin:.zero,size:size)))
-        if showMilkyWay {
-            var clouds = Array(repeating:Path(),count:8)
-            for sample in snapshot.milkyWay {
-                guard let point = projection.point(sample.direction), projection.visible(point,margin:35) else { continue }
-                let depth = max(0.1,sample.direction.dot(projection.forward))
-                let r = min(32,max(5,projection.focal*0.028/depth))
-                let band = min(7,max(0,Int(sample.brightness*8)))
-                clouds[band].addEllipse(in:CGRect(x:point.x-r,y:point.y-r,width:r*2,height:r*2))
-            }
-            context.drawLayer { glow in
-                glow.addFilter(.blur(radius:5))
-                for band in 0..<8 {
-                    glow.fill(clouds[band],with:.color(Color(red:0.64,green:0.72,blue:0.88).opacity((Double(band)+1)*0.006)))
-                }
-            }
-        }
         if showLines {
             var path = Path()
             for line in snapshot.lines {
@@ -247,7 +254,7 @@ private struct NightSkyContent: View {
             if star.magnitude < 1.5 {
                 context.fill(Path(ellipseIn:CGRect(x:p.x-6,y:p.y-6,width:12,height:12)),with:.radialGradient(Gradient(colors:[tint.opacity(0.26),.clear]),center:p,startRadius:0,endRadius:6))
             }
-            context.fill(Path(ellipseIn:CGRect(x:p.x-radius,y:p.y-radius,width:radius*2,height:radius*2)),with:.color(tint.opacity(max(0.35,1-star.magnitude*0.07))))
+            context.fill(Path(ellipseIn:CGRect(x:p.x-radius,y:p.y-radius,width:radius*2,height:radius*2)),with:.color(tint.opacity(max(0.35,1-star.magnitude*0.07)*(v.up < 0 ? 0.5:1))))
             if showNames && star.magnitude < 2 && !occupied.contains(where:{ hypot($0.x-p.x,$0.y-p.y)<65 }) {
                 occupied.append(p)
                 context.draw(Text(star.name).font(.system(size:11,weight:.medium)).foregroundStyle(.white.opacity(0.85)),at:CGPoint(x:p.x+7,y:p.y+7),anchor:.topLeading)
@@ -272,7 +279,7 @@ private struct NightSkyContent: View {
                 context.draw(Text(name).font(.system(size:16,weight:.semibold)).foregroundStyle(.white.opacity(0.65)),at:p)
             }
         }
-        if let target = targetVector, target.up >= 0 {
+        if let target = targetVector, mode == 0 || target.up >= sin(-18 * .pi/180) {
             let p = projection.point(target)
             if let p, projection.visible(p,margin:-30) {
                 context.stroke(Path(ellipseIn:CGRect(x:p.x-15,y:p.y-15,width:30,height:30)),with:.color(.white),lineWidth:1)
@@ -285,7 +292,7 @@ private struct NightSkyContent: View {
                 arrow.draw(Text("↑").font(.system(size:32,weight:.light)).foregroundStyle(.white),at:.zero)
             }
         }
-        if mode == 1 {
+        if mode == 1 || selected != nil {
             let center = CGPoint(x:size.width/2,y:size.height/2)
             context.stroke(Path(ellipseIn:CGRect(x:center.x-3,y:center.y-3,width:6,height:6)),with:.color(.white.opacity(0.7)),lineWidth:1)
         }

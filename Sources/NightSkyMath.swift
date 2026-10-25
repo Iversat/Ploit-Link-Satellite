@@ -89,46 +89,17 @@ enum NightSkyMath {
     }
 }
 
-struct NightGlow {
-    var direction: DirectionVector
-    var brightness: Double
-}
-
-enum MilkyWayBand {
-    // IAU J2000 Galactic-to-equatorial rotation. Brightness is illustrative;
-    // stars remain the measured catalogue, not these decorative samples.
-    static let samples: [(ra:Double,dec:Double,brightness:Double)] = {
-        var result: [(Double,Double,Double)] = []
-        for longitude in stride(from:0.0,to:360,by:1.5) {
-            for latitude in stride(from:-13.0,through:13,by:0.9) {
-                let l = longitude * .pi/180, b = latitude * .pi/180
-                let x = cos(b)*cos(l), y = cos(b)*sin(l), z = sin(b)
-                let ex = -0.0548755604*x+0.4941094279*y-0.8676661490*z
-                let ey = -0.8734370902*x-0.4448296300*y-0.1980763734*z
-                let ez = -0.4838350155*x+0.7469822445*y+0.4559837762*z
-                let cloud = 0.67+0.18*sin(l*7+b*18)+0.15*cos(l*13-b*9)
-                let lane = 1-0.6*exp(-pow((latitude-1.5*sin(l*3))/1.3,2))
-                let glow = exp(-pow(latitude/7.5,2))*cloud*lane
-                result.append((atan2(ey,ex)*180 / .pi,asin(ez)*180 / .pi,glow))
-            }
-        }
-        return result
-    }()
-}
-
 struct NightSkySnapshot {
     var stars: [DirectionVector] = []
     var lines: [[DirectionVector]] = []
     var labels: [DirectionVector] = []
-    var milkyWay: [NightGlow] = []
     static func make(catalog: NightSkyCatalog, observer: Observer, date: Date) -> Self {
         func convert(_ ra: Double,_ dec: Double) -> DirectionVector {
             NightSkyMath.vector(ra:ra,dec:dec,observer:observer,date:date)
         }
         return .init(stars:catalog.stars.map { convert($0.ra,$0.dec) },
                      lines:catalog.constellations.flatMap { $0.lines.map { $0.map { convert($0[0],$0[1]) } } },
-                     labels:catalog.constellations.map { convert($0.ra,$0.dec) },
-                     milkyWay:MilkyWayBand.samples.map { .init(direction:convert($0.ra,$0.dec),brightness:$0.brightness) })
+                     labels:catalog.constellations.map { convert($0.ra,$0.dec) })
     }
 }
 
@@ -136,10 +107,11 @@ struct NightProjection {
     var basis: DeviceBasis
     var size: CGSize
     var focal: Double
+    var minimumElevation: Double = 0
     var forward: DirectionVector { basis.z.negative }
     func point(_ vector: DirectionVector, aboveHorizon: Bool = true) -> CGPoint? {
         let depth = vector.dot(forward)
-        guard depth > 0.02, !aboveHorizon || vector.up >= 0 else { return nil }
+        guard depth > 0.02, !aboveHorizon || vector.up >= sin(minimumElevation * .pi/180) else { return nil }
         return CGPoint(x:Double(size.width)/2+vector.dot(basis.x)*focal/depth,
                        y:Double(size.height)/2-vector.dot(basis.y)*focal/depth)
     }

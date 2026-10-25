@@ -27,7 +27,7 @@ enum HomePanel: String, Identifiable {
     @Published var orbitPresented = false
     @Published var scannerPresented = false
     @Published var nightSkyPresented = false
-    @Published var chatPresented = false
+    @Published var pointingMessages = false
     @Published var homePanel: HomePanel?
     private(set) var orbitInitialDate: Date?
     private(set) var orbitInitialSatelliteID: Int?
@@ -83,7 +83,7 @@ enum HomePanel: String, Identifiable {
                                    elements:fleetElements,observer:observer,minimumElevation:minElevation,
                                    date:clock,preferredID:selectedID)
     }
-    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !nightSkyPresented && !chatPresented && !orbitPending && homePanel == nil && (!calculatingSessions || localSessionsReady) }
+    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !nightSkyPresented && !orbitPending && homePanel == nil && (!calculatingSessions || localSessionsReady) }
     func beginLocalSessionCalculation() { localSessionsReady=false; calculatingSessions=true }
     func completeLocalSessionCalculation() {
         localSessionsReady=true
@@ -157,7 +157,12 @@ enum HomePanel: String, Identifiable {
             screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
             if preview.contains("night-sky") { nightSkyPresented = true }
-            else if preview.contains("demo-chat") { chatPresented = true }
+            else if preview.contains("demo-chat") {
+                training = true; pointing = true; pointingMessages = true
+                pointingStyle = .radar
+                axis = preview.contains("back") ? .back:.top
+                sensors.preview(azimuth:135,elevation:45,axis:axis)
+            }
             else if preview.contains("orbits") { orbitPresented = true }
             else if preview.contains("site-") { scannerPresented = true }
             else if preview == "--ui-screenshot-settings" { homePanel = .settings }
@@ -398,6 +403,6 @@ enum HomePanel: String, Identifiable {
         prepareOrbit()
         presentPreparedOrbit()
     }
-    func enterPointing(training: Bool = false) { self.training = training; clearSkyConfirmed=false; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
-    func leavePointing() { pointing = false; training = false; clearSkyConfirmed=false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }
+    func enterPointing(training: Bool = false) { self.training = training; pointingMessages=false; clearSkyConfirmed=false; pointing = true; UIApplication.shared.isIdleTimerDisabled = true }
+    func leavePointing() { pointing = false; training = false; pointingMessages=false; clearSkyConfirmed=false; pointingIntro = false; UIApplication.shared.isIdleTimerDisabled = false }
 }

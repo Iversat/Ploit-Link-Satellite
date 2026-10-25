@@ -153,6 +153,9 @@ struct PointingContent: View {
         return model.axis.instruction
     }
     var body: some View {
+        if model.training && model.pointingMessages {
+            PointingConversation(model:model,sensors:sensors)
+        } else {
         GeometryReader { geometry in
             // Keep every control reachable on compact iPhones as well.
             ScrollView(.vertical) {
@@ -174,6 +177,14 @@ struct PointingContent: View {
             if aligned && !lastAligned { UINotificationFeedbackGenerator().notificationOccurred(.success) }
             lastAligned = aligned
         }
+        }
+    }
+    private var messagesButton: some View {
+        Button { model.pointingMessages = true } label: {
+            Label("Тестовые сообщения",systemImage:"bubble.left.and.bubble.right.fill")
+                .font(.subheadline.weight(.semibold)).padding(.horizontal,20).frame(height:44)
+                .satelliteGlass(in:Capsule(),interactive:true,tint:.green.opacity(0.12))
+        }.buttonStyle(.plain).accessibilityIdentifier("openPointingMessages")
     }
     private func header(earth: Bool) -> some View {
         SatelliteGlassGroup {
@@ -223,6 +234,7 @@ struct PointingContent: View {
                 if let error = model.angularError { Text("·  ОШИБКА \(Int(error))°") }
             }.font(.system(size:10,weight:.medium)).monospacedDigit().foregroundStyle(.white.opacity(0.3)).padding(.bottom,12)
             AimAxisPicker(axis:$model.axis).padding(.horizontal,26)
+            if model.training { messagesButton.padding(.top,10) }
             Button { model.pointingIntro = true } label: {
                 HStack(spacing:6) { Image(systemName:"iphone");Text("Как держать iPhone") }.font(.system(size:13,weight:.medium)).foregroundStyle(.white.opacity(0.85)).padding(.horizontal,18).frame(height:44).satelliteGlass(in:Capsule(),interactive:true)
             }.buttonStyle(.plain).accessibilityIdentifier("showPointingIntro").padding(.vertical,12)
@@ -257,6 +269,7 @@ struct PointingContent: View {
             }
             Spacer(minLength:14)
             AimAxisPicker(axis:$model.axis).padding(.horizontal,24)
+            if model.training { messagesButton.padding(.top,10) }
             Text(model.training ? "Учебная цель · радиосвязь не подтверждается" : "Радиосвязь не подтверждена внешним модулем")
                 .font(.system(size:10)).foregroundStyle(.white.opacity(0.4)).padding(.top,10).padding(.bottom,14)
             Button { model.leavePointing() } label: {

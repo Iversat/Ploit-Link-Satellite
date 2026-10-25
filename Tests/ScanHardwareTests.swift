@@ -1,8 +1,27 @@
 import XCTest
+import simd
 @testable import PloitSatellite
 
 final class ScanHardwareTests: XCTestCase {
     private let origin = Date(timeIntervalSince1970:1000)
+
+    func testOwnedCameraRawPixelsMatchPortraitPreviewAndDirection() throws {
+        let basis = NightSkyMath.basis(azimuth:135,elevation:35)
+        let size = CGSize(width:1920,height:1080), viewport = CGSize(width:430,height:932)
+        let rotation = ScanCaptureGeometry.rawRotation(portrait:basis)
+        let transform = ScanCaptureGeometry.portraitTransform(image:size,viewport:viewport)
+        let center = CGPoint(x:0.5,y:0.5).applying(transform)
+        XCTAssertEqual(center.x,0.5,accuracy:1e-8); XCTAssertEqual(center.y,0.5,accuracy:1e-8)
+        let right = CGPoint(x:0.5,y:0.4).applying(transform)
+        XCTAssertGreaterThan(right.x,center.x); XCTAssertEqual(right.y,center.y,accuracy:1e-8)
+        let projection = SkyScanProjection(cameraRotation:rotation,
+            intrinsics:.init(.init(1100,0,0),.init(0,1100,0),.init(960,540,1)),imageSize:size,imageToViewport:transform)
+        let target = try XCTUnwrap(projection.project(.init(azimuth:135,elevation:35)))
+        XCTAssertEqual(target.x,0.5,accuracy:1e-5); XCTAssertEqual(target.y,0.5,accuracy:1e-5)
+        let above = try XCTUnwrap(projection.project(.init(azimuth:135,elevation:40)))
+        XCTAssertLessThan(above.y,target.y)
+        XCTAssertEqual(simd_determinant(rotation),1,accuracy:1e-5)
+    }
 
     func testHeadingAcquisitionRequiresRecentTrueNorth() {
         var reference = ScanHeadingReference()
