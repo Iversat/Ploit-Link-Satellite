@@ -64,6 +64,15 @@ final class SkyScanGeometryTests: XCTestCase {
             XCTAssertTrue(targets.contains(where: { !$0.collected }))
             XCTAssertTrue(targets.allSatisfy { $0.dwellFraction == 0 && $0.collectionProgress == nil })
             let projection = SkyScanPreviewGeometry.projection(size:size)
+            // Compare the actual portrait FOV with the previous 5-degree grid.
+            var previousVisibleCount = 0
+            for elevation in stride(from:2.5,to:90.0,by:5.0) {
+                for azimuth in stride(from:2.5,to:360.0,by:5.0) {
+                    if projection.project(.init(azimuth:azimuth,elevation:elevation)) != nil { previousVisibleCount += 1 }
+                }
+            }
+            XCTAssertGreaterThan(Double(targets.count),Double(previousVisibleCount)*2.5,
+                                 "The denser grid must produce more visible targets in both tall and compact camera viewports.")
             for target in targets {
                 let point = try XCTUnwrap(projection.project(SkySurvey.direction(at:target.id)))
                 XCTAssertEqual(target.x,Double(point.x),accuracy:0.000001)

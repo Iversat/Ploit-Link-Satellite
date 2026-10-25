@@ -245,9 +245,24 @@ final class PointingFlowTests: XCTestCase {
     }
     func testOrbitOpenedFromPointingReturnsHome() {
         let app=XCUIApplication(); app.launchArguments=["--ui-screenshot-earth-unavailable"]; app.launch()
-        XCTAssertTrue(app.buttons["earthPasses"].waitForExistence(timeout:10))
-        app.buttons["earthPasses"].tap()
-        XCTAssertTrue(app.buttons["passesOrbits"].waitForExistence(timeout:5))
+        let summary=app.descendants(matching:.any)["sessionSummary"]
+        XCTAssertTrue(summary.waitForExistence(timeout:15))
+        // This fixture starts in training and changes layout after its async orbit selection.
+        // Wait for its final data before targeting the row in the measured layout.
+        expectation(for:NSPredicate(format:"label CONTAINS %@","До сеанса 10 мин"),evaluatedWith:summary)
+        let status=app.staticTexts["pointingStatus"]
+        expectation(for:NSPredicate(format:"label CONTAINS[c] %@","за горизонтом"),evaluatedWith:status)
+        waitForExpectations(timeout:10)
+        let passes=app.buttons["earthPasses"]
+        XCTAssertTrue(passes.isHittable)
+        let tappedFrame=passes.frame
+        passes.tap()
+        let opened=app.buttons["passesOrbits"].waitForExistence(timeout:5)
+        if !opened {
+            let attachment=XCTAttachment(screenshot:XCUIScreen.main.screenshot())
+            attachment.name="pointing-passes-open-failure"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        XCTAssertTrue(opened,"One tap must open passes. Row before=\(tappedFrame), after=\(passes.exists ? passes.frame:.zero); status=\(status.label); summary=\(summary.label)\n\(app.debugDescription)")
         app.buttons["passesOrbits"].tap()
         XCTAssertTrue(app.buttons["closeOrbits"].waitForExistence(timeout:10))
         app.buttons["closeOrbits"].tap()

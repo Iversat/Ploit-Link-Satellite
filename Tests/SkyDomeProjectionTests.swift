@@ -58,7 +58,7 @@ final class SkyDomeProjectionTests: XCTestCase {
     func testSparsePointCloudReadsRealSurveyCellsWithoutPolarBands() {
         let mesh = SkyDomePoint.mesh
         XCTAssertEqual(mesh.count,1_536)
-        XCTAssertEqual(SkySurvey.columns*SkySurvey.rows,1_296,"Display density must not change captured data resolution.")
+        XCTAssertEqual(SkySurvey.columns*SkySurvey.rows,3_600,"The capture grid is independent of the sparse display mesh.")
         // Equal increments of z divide the hemisphere into equal-area bands.
         // The former extra centre points must not form crowded zenith rings.
         for (first,last) in zip(mesh,mesh.dropFirst()) {
@@ -76,25 +76,25 @@ final class SkyDomeProjectionTests: XCTestCase {
     }
 
     func testObserverFacesRecordedWorldBearingWithPhoneInFront() {
-        for bearing in [0.0,45,90,135,180,270,359] {
+        for bearing in [0.0,45,90,135,180,225,270,359] {
             let pose = SkyDomeObserverPose(startAzimuth:bearing)
             let expected = vector(bearing,0)
             XCTAssertEqual(pose.forward.x,expected.x,accuracy:1e-12)
             XCTAssertEqual(pose.forward.y,expected.y,accuracy:1e-12)
             XCTAssertEqual(pose.forward.dot(pose.right),0,accuracy:1e-12)
-            let phone = pose.point(forward:0.225,height:0.415)
-            XCTAssertEqual(phone.dot(pose.forward),0.225,accuracy:1e-12)
-            XCTAssertEqual(phone.dot(pose.right),0,accuracy:1e-12)
-            XCTAssertEqual(phone.z,0.415,accuracy:1e-12)
+            let phone = pose.handsetPoint(0,0)
+            XCTAssertGreaterThan(phone.dot(pose.forward),0,"The phone must remain ahead of the person.")
+            XCTAssertGreaterThan(phone.dot(pose.right),0,"A slight right offset keeps the handset visible over the shoulder.")
+            XCTAssertGreaterThan(phone.z,0.4)
             let orientation = SkyDomeOrientation.resolve(startAzimuth:bearing,viewingDirection:nil)
             let projection = SkyDomeProjection(yaw:orientation.yaw,pitch:orientation.pitch)
             XCTAssertEqual(projection.projected(pose.forward).x,0,accuracy:1e-12)
-            XCTAssertGreaterThan(projection.projected(pose.forward).depth,0)
+            XCTAssertLessThan(projection.projected(pose.forward).depth,0,"The initial camera must see the person's back.")
         }
         XCTAssertEqual(SkyDomeObserverPose(startAzimuth:nil).forward,SkyDomeObserverPose(startAzimuth:.nan).forward)
     }
 
-    func testObserverKeepsInitialHeadingWhenCameraShowsFrontProfileOrBack() {
+    func testObserverKeepsInitialHeadingWhenCameraShowsBackProfileOrFront() {
         let pose = SkyDomeObserverPose(startAzimuth:135)
         let forward = pose.forward
         var depths: [Double] = []
@@ -107,9 +107,9 @@ final class SkyDomeProjectionTests: XCTestCase {
             XCTAssertEqual(shoulders[0].z,shoulders[1].z,accuracy:1e-12)
             XCTAssertEqual(shoulders[1].dot(pose.right)-shoulders[0].dot(pose.right),0.216,accuracy:1e-12)
         }
-        XCTAssertGreaterThan(depths[0],0.8)
+        XCTAssertLessThan(depths[0],-0.8)
         XCTAssertEqual(depths[1],0,accuracy:1e-12)
-        XCTAssertLessThan(depths[2],-0.8)
+        XCTAssertGreaterThan(depths[2],0.8)
     }
 
     func testTrackRejectsHiddenSegmentsAndClipsHorizon() throws {
@@ -123,19 +123,21 @@ final class SkyDomeProjectionTests: XCTestCase {
         XCTAssertNil(SkyDomeProjection.vector(.init(azimuth:.nan,elevation:30)))
     }
 
-    func testRecordedInitialBearingFacesVisibleSideAndResetRestoresIt() {
-        for start in [0.0,90,180,270,359] {
+    func testRecordedInitialBearingLooksFromBehindAndResetRestoresIt() {
+        for start in [0.0,90,180,225,270,359] {
             let original = SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil)
-            let projection = SkyDomeProjection(yaw:original.yaw,pitch:original.pitch)
-            XCTAssertTrue(projection.isVisible(vector(start,5)),"Recorded bearing must not be on the hidden half.")
+            let projection = SkyDomeProjection(yaw:original.yaw,pitch:original.pitch,interior:true)
+            XCTAssertLessThan(projection.projected(vector(start,0)).depth,0,"Camera is behind the recorded bearing.")
+            XCTAssertTrue(projection.isVisible(vector(start,5)),"The cutaway exposes the sky ahead of the observer.")
             XCTAssertFalse(projection.isVisible(vector(start+180,5)))
+            XCTAssertTrue(projection.isVisible(vector(start,89)),"A vertical cut must retain the zenith region.")
             XCTAssertEqual(projection.projected(vector(start,5)).x,0,accuracy:1e-12)
             let dragged = SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil,yawOffset:65,pitchOffset:18)
             XCTAssertNotEqual(dragged,original)
             XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:start,viewingDirection:nil,yawOffset:0,pitchOffset:0),original)
         }
         let south = SkyDomeOrientation.resolve(startAzimuth:180,viewingDirection:nil)
-        XCTAssertEqual(south.yaw,0,accuracy:1e-12)
+        XCTAssertEqual(abs(south.yaw),180,accuracy:1e-12)
         XCTAssertEqual(south.pitch,32,accuracy:1e-12)
     }
 
@@ -148,9 +150,9 @@ final class SkyDomeProjectionTests: XCTestCase {
         XCTAssertGreaterThan(AimMath.separation(az1:rear.azimuth,el1:rear.elevation,az2:top.az,el2:top.el),89)
 
         let live = SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:rear)
-        XCTAssertEqual(live.yaw,-40,accuracy:1e-10)
+        XCTAssertEqual(live.yaw,140,accuracy:1e-10)
         XCTAssertEqual(live.pitch,40,accuracy:1e-10)
-        let projection = SkyDomeProjection(yaw:live.yaw,pitch:live.pitch)
+        let projection = SkyDomeProjection(yaw:live.yaw,pitch:live.pitch,interior:true)
         XCTAssertTrue(projection.isVisible(vector(220,10)))
         XCTAssertFalse(projection.isVisible(vector(40,10)))
     }
@@ -166,9 +168,29 @@ final class SkyDomeProjectionTests: XCTestCase {
         let original = SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:nil)
         XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:.nan,elevation:30)),original)
         XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:100)),original)
-        XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:.nan,viewingDirection:nil).yaw,0)
+        XCTAssertEqual(abs(SkyDomeOrientation.resolve(startAzimuth:.nan,viewingDirection:nil).yaw),180)
         XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:-30)).pitch,15)
         XCTAssertEqual(SkyDomeOrientation.resolve(startAzimuth:135,viewingDirection:.init(azimuth:100,elevation:90)).pitch,75)
+    }
+
+    func testInteriorTrackAndPointsUseTheSameVerticalCutaway() throws {
+        let projection = SkyDomeProjection(yaw:-225,pitch:32,interior:true)
+        for elevation in [0.0,20,60,89] {
+            XCTAssertTrue(projection.isVisible(vector(225,elevation)))
+            XCTAssertFalse(projection.isVisible(vector(45,elevation)))
+        }
+        XCTAssertNil(projection.visibleSegment(from:vector(25,30),to:vector(65,30)))
+        let clipped = try XCTUnwrap(projection.visibleSegment(from:vector(100,35),to:vector(170,35)))
+        XCTAssertEqual(projection.surfaceDepth(clipped.0),0,accuracy:1e-12)
+        XCTAssertTrue(projection.isVisible(clipped.0))
+        XCTAssertTrue(projection.isVisible(clipped.1))
+        let patch = projection.visiblePolygon([vector(100,20),vector(170,20),vector(170,40),vector(100,40)])
+        XCTAssertGreaterThanOrEqual(patch.count,3)
+        XCTAssertTrue(patch.allSatisfy { projection.isVisible($0) })
+        // The existing ENU compass places east to the right when looking north.
+        let north = SkyDomeProjection(yaw:0,pitch:32,interior:true)
+        XCTAssertGreaterThan(north.projected(vector(90,0)).x,0)
+        XCTAssertLessThan(north.projected(vector(270,0)).x,0)
     }
 
     func testCachedTrackRetainsDirectionsAndRejectsInvalidOrAntipodalSpans() throws {

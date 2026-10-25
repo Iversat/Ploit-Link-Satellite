@@ -353,8 +353,8 @@ struct HoldingPhoneIllustration: View {
         let scale = min(geometry.size.width/260,geometry.size.height/260)
         ZStack {
             phone
-                .rotation3DEffect(.degrees(axis == .back ? 26:0),axis:(x:1,y:0,z:0))
-                .rotation3DEffect(.degrees(axis == .back ? 35:0),axis:(x:0,y:1,z:0))
+                .rotation3DEffect(.degrees(axis == .back ? 28:0),
+                                  axis:(x:0.6,y:0.8,z:0),anchor:.center,perspective:0.18)
                 .position(x:axis == .back ? 114:130,y:151)
             if axis == .top {
                 SatelliteGlyph().frame(width:30,height:30).foregroundStyle(.white).position(x:130,y:19)

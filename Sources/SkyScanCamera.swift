@@ -249,7 +249,7 @@ enum SkyScanLocation {
         let newlyCollected = collecting ? result.collect(completed):[]
         collectionAnimation.update(newIDs:newlyCollected,at:frame.timestamp,enabled:collecting && !isPreview)
         if feedback.shouldPulse(newCount:newlyCollected.count,at:frame.timestamp,collecting:collecting,preview:isPreview) {
-            collectionHaptic?.impactOccurred(intensity:0.45)
+            collectionHaptic?.impactOccurred(intensity:0.75)
             collectionHaptic?.prepare()
         }
         if let direction, direction.elevation < 0 {
@@ -308,13 +308,7 @@ enum SkyScanLocation {
         stop()
         isPreview = true; headingReady = true
         if collecting || !survey.hasRecordedData {
-            survey = SkySurvey(); startAzimuth = 135
-            for index in survey.cells.indices {
-                let direction = SkySurvey.direction(at:index)
-                if direction.elevation > 25 { survey.mark(direction,state:.clear) }
-                if direction.azimuth > 220 && direction.azimuth < 290 && direction.elevation < 55 { survey.mark(direction,state:.blocked) }
-            }
-            survey.collect(Set(survey.cells.indices.filter { SkySurvey.direction(at:$0).azimuth < 180 }))
+            survey = SkySurvey.preview(); startAzimuth = 135
         }
         coverageFraction = survey.coverageFraction
         isSnapshot = true; self.collecting = capture && collecting

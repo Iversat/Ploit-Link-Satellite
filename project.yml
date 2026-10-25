@@ -23,8 +23,8 @@ targets:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: PLS
-        CFBundleShortVersionString: "1.6.0"
-        CFBundleVersion: "16"
+        CFBundleShortVersionString: "1.6.1"
+        CFBundleVersion: "17"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

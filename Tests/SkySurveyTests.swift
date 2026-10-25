@@ -3,13 +3,15 @@ import XCTest
 
 final class SkySurveyTests: XCTestCase {
     func testDenseGridRoundTripsEveryCellAndSeparatesNearbyDirections() {
-        XCTAssertEqual(SkySurvey.columns*SkySurvey.rows,1_296)
+        XCTAssertEqual(SkySurvey.columns*SkySurvey.rows,3_600)
+        XCTAssertEqual(SkySurvey.azimuthStep,3)
+        XCTAssertEqual(SkySurvey.elevationStep,3)
         for index in 0..<SkySurvey.columns*SkySurvey.rows {
             let direction = SkySurvey.direction(at:index)
             XCTAssertEqual(SkySurvey.index(azimuth:direction.azimuth,elevation:direction.elevation),index)
         }
-        XCTAssertNotEqual(SkySurvey.index(azimuth:2.5,elevation:2.5),SkySurvey.index(azimuth:7.5,elevation:2.5))
-        XCTAssertNotEqual(SkySurvey.index(azimuth:2.5,elevation:2.5),SkySurvey.index(azimuth:2.5,elevation:7.5))
+        XCTAssertNotEqual(SkySurvey.index(azimuth:1.5,elevation:1.5),SkySurvey.index(azimuth:4.5,elevation:1.5))
+        XCTAssertNotEqual(SkySurvey.index(azimuth:1.5,elevation:1.5),SkySurvey.index(azimuth:1.5,elevation:4.5))
         var west = SkySurvey()
         west.collect(Set(west.cells.indices.filter { SkySurvey.direction(at:$0).azimuth >= 180 }))
         XCTAssertEqual(west.coverageFraction,0.5,accuracy:1e-12)
@@ -72,15 +74,17 @@ final class SkySurveyTests: XCTestCase {
         full.collect([-1,SkySurvey.columns*SkySurvey.rows,Int.max])
         XCTAssertEqual(full.coverageFraction,before)
     }
-    func testCollectionPreservesExplicitClassificationsAndIsIdempotent() {
+    func testCollectionPreservesExplicitClassificationsAndIsIdempotent() throws {
         var survey = SkySurvey()
-        let blocked = SkySurvey.direction(at:30), clear = SkySurvey.direction(at:150)
+        let blockedID = try XCTUnwrap(SkySurvey.index(azimuth:90,elevation:30))
+        let clearID = try XCTUnwrap(SkySurvey.index(azimuth:210,elevation:45))
+        let blocked = SkySurvey.direction(at:blockedID), clear = SkySurvey.direction(at:clearID)
         survey.mark(blocked,state:.blocked); survey.mark(clear,state:.clear)
         XCTAssertEqual(survey.coverageFraction,0,"Manual classification is separate from camera coverage.")
-        XCTAssertEqual(survey.collect([30,150]),[30,150])
-        XCTAssertTrue(survey.collect([30,150]).isEmpty)
+        XCTAssertEqual(survey.collect([blockedID,clearID]),[blockedID,clearID])
+        XCTAssertTrue(survey.collect([blockedID,clearID]).isEmpty)
         XCTAssertTrue(survey.collect([-1,SkySurvey.columns*SkySurvey.rows]).isEmpty)
         XCTAssertEqual(survey.coveredCellCount,2)
-        XCTAssertEqual(survey.cells[30],.blocked); XCTAssertEqual(survey.cells[150],.clear)
+        XCTAssertEqual(survey.cells[blockedID],.blocked); XCTAssertEqual(survey.cells[clearID],.clear)
     }
 }

@@ -8,8 +8,8 @@ struct SkyDirection: Equatable {
 }
 
 struct SkySurvey {
-    static let columns = 72
-    static let rows = 18
+    static let columns = 120
+    static let rows = 30
     static let azimuthStep = 360.0 / Double(columns)
     static let elevationStep = 90.0 / Double(rows)
     private static let rowAreas = (0..<rows).map { row in
@@ -70,6 +70,21 @@ struct SkySurvey {
             }
         }
     }
+    #if DEBUG
+    static func preview() -> Self {
+        var result = Self()
+        // Seed the synthetic fixture in one pass, independently of camera collection.
+        for index in result.cells.indices {
+            let direction = Self.direction(at:index)
+            if direction.elevation > 25 { result.cells[index] = .clear }
+            if direction.azimuth > 220 && direction.azimuth < 290 && direction.elevation < 55 {
+                result.cells[index] = .blocked
+            }
+        }
+        result.collect(Set(result.cells.indices.filter { Self.direction(at:$0).azimuth < 180 }))
+        return result
+    }
+    #endif
     func assessment(path: [SkyDirection]) -> SkyAssessment {
         guard !path.isEmpty else { return .init(total:0, clear:0, blocked:0) }
         var clear = 0, blocked = 0

@@ -211,14 +211,15 @@ struct SiteScanView: View {
                     for target in scan.projectedTargets {
                         if screen == .scanning && target.collected && target.collectionProgress == nil { continue }
                         let point = CGPoint(x:target.x*size.width,y:target.y*size.height)
+                        guard area.contains(point) else { continue }
                         if screen == .scanning, let progress = target.collectionProgress {
-                            let size = CGFloat(4*(1-progress))
-                            let ring = CGFloat(5+9*progress)
+                            let size = CGFloat(3.25*(1-progress))
+                            let ring = CGFloat(4.5+7.5*progress)
                             context.fill(Path(ellipseIn:CGRect(x:point.x-size,y:point.y-size,width:size*2,height:size*2)),with:.color(.white.opacity(1-progress)))
                             context.stroke(Path(ellipseIn:CGRect(x:point.x-ring,y:point.y-ring,width:ring*2,height:ring*2)),with:.color(.white.opacity(0.7*(1-progress))),lineWidth:1.2)
                             continue
                         }
-                        let radius: CGFloat = screen == .inspecting ? 5:CGFloat(4 * (1-0.25*target.dwellFraction))
+                        let radius: CGFloat = screen == .inspecting ? 3.5:CGFloat(3.25 * (1-0.25*target.dwellFraction))
                         let color: Color
                         switch screen == .scanning ? .unknown : target.state {
                         case .blocked: color = Color(red:1,green:0.2,blue:0.26)
@@ -228,7 +229,7 @@ struct SiteScanView: View {
                         }
                         context.fill(Path(ellipseIn:CGRect(x:point.x-radius,y:point.y-radius,width:radius*2,height:radius*2)),with:.color(color))
                         if screen == .scanning && target.dwellFraction > 0 {
-                            let ring = Path(ellipseIn:CGRect(x:point.x-8,y:point.y-8,width:16,height:16))
+                            let ring = Path(ellipseIn:CGRect(x:point.x-7,y:point.y-7,width:14,height:14))
                                 .trimmedPath(from:0,to:target.dwellFraction)
                             context.stroke(ring,with:.color(.white.opacity(0.8)),lineWidth:1.2)
                         }

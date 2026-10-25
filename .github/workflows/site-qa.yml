@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       capture_screenshots:
-        description: Capture visual gallery after tests (disable for focused regression checks)
+        description: Capture visual gallery before tests
         type: boolean
         default: true
       record_interactions:
@@ -14,6 +14,11 @@ on:
         description: Capture additional iOS 18 and compact iPhone screens
         type: boolean
         default: true
+      test_scope:
+        description: Native test scope
+        type: choice
+        options: [all, sky-survey, none]
+        default: all
 permissions:
   contents: read
 concurrency:
@@ -45,6 +50,16 @@ jobs:
           python3 tools/package-ipa.py build/device/Build/Products/Release-iphoneos/PloitSatellite.app build/Ploit-Satellite-unsigned.ipa
           python3 tools/verify-ipa.py build/Ploit-Satellite-unsigned.ipa
           shasum -a 256 build/Ploit-Satellite-unsigned.ipa > build/SHA256.txt
+      - name: Upload IPA
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Ploit-Satellite-unsigned-IPA
+          path: |
+            build/Ploit-Satellite-unsigned.ipa
+            build/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
       - name: Prepare iOS 26 Pro Max simulator
         run: |
           set -euo pipefail
@@ -63,6 +78,7 @@ jobs:
         if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.capture_screenshots != false }}
         env:
           EXTENDED_DEVICES: ${{ inputs.extended_devices }}
+          TEST_SCOPE: ${{ inputs.test_scope }}
         run: |
           set -euo pipefail
           KINDS="ios26-pro-max"
@@ -71,6 +87,9 @@ jobs:
             if [ "$KIND" = ios26-pro-max ]; then
               DEVICE="$SITE_DEVICE"
               SCENES="home-night home-day home-evening orbits-night site-intro site-scan site-capture site-info site-gyro radar-back-intro radar-top-intro radar-top-aligned"
+              if [ "$TEST_SCOPE" = sky-survey ]; then
+                SCENES="home-night site-scan site-capture site-gyro radar-back-intro radar-top-intro"
+              fi
             else
               DEVICE=$(python3 -c 'import json,sys;d=json.load(open("build/available-simulators.json"));kind=sys.argv[1];runtime="iOS-18-" if kind=="ios18-pro-max" else "iOS-26-";name="iPhone 16 Pro Max" if kind=="ios18-pro-max" else "iPhone SE (3rd generation)";v=[x for k,a in sorted(d["devices"].items(),reverse=True) if runtime in k for x in a if x["name"]==name];assert v,"Required simulator unavailable: "+kind;print(v[0]["udid"])' "$KIND")
               echo "$DEVICE" >> build/site-devices.txt
@@ -111,8 +130,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Unit tests and application UI tests
+        if: ${{ inputs.test_scope != 'none' }}
         env:
           RECORD_INTERACTIONS: ${{ inputs.record_interactions }}
+          TEST_SCOPE: ${{ inputs.test_scope }}
         run: |
           set -euo pipefail
           xcrun simctl boot "$SITE_DEVICE" || true
@@ -122,23 +143,26 @@ jobs:
             RECORDING_PID=$!
             trap 'kill -INT "$RECORDING_PID" 2>/dev/null || true; wait "$RECORDING_PID" || true' EXIT
           fi
-          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO -only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log | awk '/Test (Suite|Case)|Executed [0-9]+ tests|error:|failed|TEST (SUCCEEDED|FAILED)/ { print; fflush() }'
+          TESTS=(-only-testing:PloitSatelliteTests -only-testing:PloitSatelliteUITests)
+          if [ "$TEST_SCOPE" = sky-survey ]; then
+            TESTS=(
+              -only-testing:PloitSatelliteTests/SkySurveyTests
+              -only-testing:PloitSatelliteTests/SkyScanGeometryTests
+              -only-testing:PloitSatelliteTests/SkyScanLifecycleTests
+              -only-testing:PloitSatelliteTests/SkyDomeProjectionTests
+              -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testSkyModesPathAndNeutralInformationReturnToMap
+              -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testCameraPreviewFinishesInspectsAndReturnsToTheSameMap
+              -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testRearPhoneInstructionsShowAndDismiss
+              -only-testing:PloitSatelliteUITests/SiteScanFlowTests/testSkyDomeRotatesInBothDirectionsResetsAndReturnsHome
+            )
+          fi
+          xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Debug -destination "platform=iOS Simulator,id=$SITE_DEVICE" -parallel-testing-enabled NO "${TESTS[@]}" -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO -resultBundlePath build/SiteTests.xcresult test-without-building | tee build-site-tests.log | awk '/Test (Suite|Case)|Executed [0-9]+ tests|error:|failed|TEST (SUCCEEDED|FAILED)/ { print; fflush() }'
       - name: Export test attachments including weather controls
         if: always()
         run: |
           if [ -d build/SiteTests.xcresult ]; then
             xcrun xcresulttool export attachments --path build/SiteTests.xcresult --output-path build/test-attachments
           fi
-      - name: Upload IPA
-        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Ploit-Satellite-unsigned-IPA
-          path: |
-            build/Ploit-Satellite-unsigned.ipa
-            build/SHA256.txt
-          if-no-files-found: error
-          retention-days: 30
       - name: Upload site QA
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
