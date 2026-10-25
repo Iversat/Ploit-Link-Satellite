@@ -19,7 +19,7 @@ private final class CaptureScanTorchDevice: ScanTorchDevice {
     func setEnabled(_ enabled: Bool) throws {
         try device.lockForConfiguration()
         defer { device.unlockForConfiguration() }
-        if enabled { try device.setTorchModeOn(level:0.5) }
+        if enabled { try device.setTorchModeOn(level:AVCaptureDevice.maxAvailableTorchLevel); device.torchMode = .on }
         else if device.isTorchModeSupported(.off) { device.torchMode = .off }
     }
 }
@@ -34,7 +34,9 @@ private final class CaptureScanTorchDevice: ScanTorchDevice {
             // Resolve AFTER ARSession has selected its capture device. The
             // physical wide camera is a fallback, never a second capture session.
             let cameras = [ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera,
-                           AVCaptureDevice.default(.builtInWideAngleCamera,for:.video,position:.back)]
+                           AVCaptureDevice.default(.builtInWideAngleCamera,for:.video,position:.back),
+                           AVCaptureDevice.default(.builtInTripleCamera,for:.video,position:.back),
+                           AVCaptureDevice.default(.builtInDualWideCamera,for:.video,position:.back)]
             var ids = Set<String>()
             return cameras.compactMap { camera in
                 guard let camera, ids.insert(camera.uniqueID).inserted else { return nil }
@@ -57,12 +59,22 @@ private final class CaptureScanTorchDevice: ScanTorchDevice {
             if enabled {
                 var requested = false
                 for device in candidates where device.available {
-                    do { try device.setEnabled(true); requested = true; break }
+                    do {
+                        try device.setEnabled(true)
+                        // A successful setter can leave the LED dark on an
+                        // inactive camera. Wait off-main for hardware confirmation.
+                        for _ in 0..<5 {
+                            if device.active { break }
+                            Thread.sleep(forTimeInterval:0.06)
+                        }
+                        if device.active { requested = true; break }
+                        try? device.setEnabled(false)
+                    }
                     catch { continue }
                 }
                 if !requested {
                     failure = candidates.isEmpty ? "На этом устройстве нет доступного фонарика."
-                        : "Камера пока не разрешила включить фонарик. Подождите и повторите нажатие."
+                        : "Светодиод не включился. Камера или iOS ограничивает фонарик; попробуйте завершить сканирование и открыть его снова."
                 }
             } else {
                 // Includes devices selected before a camera switch, and runs

@@ -28,7 +28,7 @@ struct AssistantView: View {
             ZStack {
                 (model.pointing && model.pointingStyle == .radar ? Color(red:0.025,green:0.03,blue:0.04) : Color.black).ignoresSafeArea()
                 if !model.pointing || model.pointingStyle == .earth {
-                    EarthView(active: !model.orbitPresented && !model.scannerPresented,latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
+                    EarthView(active: !model.orbitPresented && !model.scannerPresented && !model.nightSkyPresented && !model.chatPresented,latitude: model.observer?.latitude ?? 35, longitude: model.observer?.longitude ?? 35).ignoresSafeArea()
                     LinearGradient(colors: [.black.opacity(0.2),.clear,.black.opacity(0.12),.black.opacity(0.65)], startPoint: .top,endPoint: .bottom).ignoresSafeArea()
                 }
                 if model.pointing { PointingView() } else {
@@ -67,6 +67,18 @@ struct AssistantView: View {
                                     .font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity).frame(height:42)
                                     .satelliteGlass(in:Capsule(),clear:true,interactive:true)
                             }.buttonStyle(.plain).accessibilityIdentifier("openSiteScan")
+                            HStack(spacing:12) {
+                                Button { model.chatPresented = true } label: {
+                                    Label("Тестовый чат",systemImage:"bubble.left.and.bubble.right")
+                                        .font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity).frame(height:48)
+                                        .satelliteGlass(in:Capsule(),clear:true,interactive:true)
+                                }.buttonStyle(.plain).accessibilityIdentifier("openDemoChat")
+                                Button { model.nightSkyPresented = true } label: {
+                                    Label("Ночное небо",systemImage:"sparkles")
+                                        .font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity).frame(height:48)
+                                        .satelliteGlass(in:Capsule(),clear:true,interactive:true)
+                                }.buttonStyle(.plain).accessibilityIdentifier("openNightSky")
+                            }
                         }
                         }
                         .padding(.horizontal,22)
@@ -96,6 +108,8 @@ struct AssistantView: View {
                               initialSatelliteID:model.orbitInitialSatelliteID).environmentObject(model)
         }
         .fullScreenCover(isPresented:$model.scannerPresented) { SiteScanView().environmentObject(model) }
+        .fullScreenCover(isPresented:$model.nightSkyPresented) { NightSkyView().environmentObject(model) }
+        .fullScreenCover(isPresented:$model.chatPresented) { DemoChatView().environmentObject(model) }
     }
     private var status: some View {
         GlassPanel(liquidGlass: true) {

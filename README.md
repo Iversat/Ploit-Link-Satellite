@@ -10,7 +10,7 @@
 
 **Ploit Link Satellite (PLS)** is an iPhone companion concept for satellite messaging through an external radio module. The aim is to help people communicate beyond mobile coverage using suitable satellite relays.
 
-The app helps you choose a satellite, find an upcoming pass, point your antenna and check the surrounding sky for obstacles. Radio transmission is planned through a separate module with its own antenna and power supply; messaging and hardware integration are still in development.
+The app helps you choose a satellite, find an upcoming pass, point your antenna and check the surrounding sky for obstacles. Radio transmission is planned through a separate module with its own antenna and power supply; a local demo chat is available, while radio transmission and hardware integration are still in development.
 
 **iPhone → внешний радиомодуль → спутниковый ретранслятор → радиомодуль получателя → его телефон**
 
@@ -24,6 +24,8 @@ The app helps you choose a satellite, find an upcoming pass, point your antenna 
 - **Два вида наведения.** Круговой индикатор и вид с Землёй, подсказками поворота и текущими данными о пролёте.
 - **Интерактивные орбиты.** Пространственные орбиты вокруг Земли, вращение вокруг полярной оси, наклон вверх и вниз, масштабирование, выбор одного спутника или всего каталога.
 - **Перемотка времени.** Диапазон от 6 часов назад до 48 часов вперёд, переход к началу сеанса, воспроизведение ×1, ×60 и ×300.
+- **Ночное небо.** Встроенный каталог 5 070 звёзд, созвездия и Млечный Путь. Свободный обзор с Земли вращается пальцем; время можно менять в пределах ±12 часов. AR совмещает расчётную карту с задней камерой и помогает наводиться на выбранный объект. Направление зависит от компаса; камера не распознаёт звёзды, облака и засветку этот режим не измеряет. Каталог работает без интернета.
+- **Тестовый чат.** Клавиатура, выбор спутника и локальный диалог с симулятором. Сообщения сохраняются только на iPhone и не передаются в эфир. Радиоотправка появится после интеграции внешнего модуля.
 - **День и ночь.** Освещение Земли следует за выбранным временем; огни городов видны на ночной стороне. Карты поверхности имеют разрешение 8K.
 - **Режим тренировки.** Знакомство с наведением без ожидания настоящего пролёта.
 - **Сканирование неба.** Сетка из 3600 направлений с шагом 3°. Собранные зелёные точки сходятся к центру и исчезают с мягким тактильным откликом. Во время сканирования доступен фонарик. Охват камеры учитывается отдельно от результата распознавания.
@@ -152,3 +154,5 @@ IPA распространяется без подписи. Перед уста�
 - [Vallado et al.](https://celestrak.org/publications/AIAA/2006-6753/) — эталонные данные для проверки расчётов SGP4.
 
 Полные карты NASA уменьшены из исходников до 8192×4096. Исходные снимки статические; освещение для выбранного времени рассчитывается отдельно. Использование этих материалов не означает поддержку проекта со стороны NASA.
+
+Данные звёзд HYG v4.1 (David Nash / Astronexus, CC BY-SA 4.0), линии созвездий и контуры Млечного Пути d3-celestial (Olaf Frohn, BSD-3-Clause) сохраняют свои лицензии. Источники и изменения данных описаны в [NightSky-NOTICE](LICENSES/NightSky-NOTICE.md).

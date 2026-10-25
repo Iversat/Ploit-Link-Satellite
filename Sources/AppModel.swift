@@ -26,6 +26,8 @@ enum HomePanel: String, Identifiable {
     private(set) var localSessionsReady = false
     @Published var orbitPresented = false
     @Published var scannerPresented = false
+    @Published var nightSkyPresented = false
+    @Published var chatPresented = false
     @Published var homePanel: HomePanel?
     private(set) var orbitInitialDate: Date?
     private(set) var orbitInitialSatelliteID: Int?
@@ -81,7 +83,7 @@ enum HomePanel: String, Identifiable {
                                    elements:fleetElements,observer:observer,minimumElevation:minElevation,
                                    date:clock,preferredID:selectedID)
     }
-    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !orbitPending && homePanel == nil && (!calculatingSessions || localSessionsReady) }
+    var automaticSelectionAllowed: Bool { autoSelectSatellite && !pointing && !orbitPresented && !scannerPresented && !nightSkyPresented && !chatPresented && !orbitPending && homePanel == nil && (!calculatingSessions || localSessionsReady) }
     func beginLocalSessionCalculation() { localSessionsReady=false; calculatingSessions=true }
     func completeLocalSessionCalculation() {
         localSessionsReady=true
@@ -154,7 +156,9 @@ enum HomePanel: String, Identifiable {
         if let preview = ProcessInfo.processInfo.arguments.first(where:{$0.hasPrefix("--ui-screenshot-")}) {
             screenshotMode = true
             manualLocation = true; manualLat = "48.708"; manualLon = "44.513"
-            if preview.contains("orbits") { orbitPresented = true }
+            if preview.contains("night-sky") { nightSkyPresented = true }
+            else if preview.contains("demo-chat") { chatPresented = true }
+            else if preview.contains("orbits") { orbitPresented = true }
             else if preview.contains("site-") { scannerPresented = true }
             else if preview == "--ui-screenshot-settings" { homePanel = .settings }
             else if preview.contains("catalogue") { homePanel = .satellites }

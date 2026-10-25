@@ -93,6 +93,20 @@ final class ScanHardwareTests: XCTestCase {
         XCTAssertFalse(torch.isOn)
     }
 
+    @MainActor func testSilentInactiveTorchTriesAnotherCameraAndReportsFailure() async {
+        let dark = MockScanTorchDevice("dark")
+        dark.silentFailure = true
+        let working = MockScanTorchDevice("working")
+        let torch = SystemSkyScanTorch(resolve:{ [dark,working] })
+        let result = await command(torch,true)
+        XCTAssertTrue(result.0); XCTAssertNil(result.1)
+        XCTAssertEqual(dark.commands,[true,false])
+        _ = await command(torch,false)
+        let failed = SystemSkyScanTorch(resolve:{ [dark] })
+        let error = await command(failed,true)
+        XCTAssertFalse(error.0); XCTAssertNotNil(error.1)
+    }
+
     @MainActor private func command(_ torch: SystemSkyScanTorch,_ enabled: Bool) async -> (Bool,String?) {
         await withCheckedContinuation { continuation in
             torch.setOn(enabled) { active,error in continuation.resume(returning:(active,error)) }
@@ -106,10 +120,11 @@ private final class MockScanTorchDevice: ScanTorchDevice {
     var available = true
     var active = false
     var failsOn = false
+    var silentFailure = false
     var commands: [Bool] = []
     init(_ id: String) { self.id = id }
     func setEnabled(_ enabled: Bool) throws {
         if enabled && failsOn { throw NSError(domain:"TorchTest",code:1) }
-        commands.append(enabled); active = enabled
+        commands.append(enabled); active = enabled && !silentFailure
     }
 }

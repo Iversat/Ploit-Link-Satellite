@@ -24,14 +24,20 @@ targets:
         buildPhase: sources
       - path: LICENSES/SkyScene-NOTICE.md
         buildPhase: resources
+      - path: LICENSES/NightSky-NOTICE.md
+        buildPhase: resources
+      - path: LICENSES/HYG-CC-BY-SA-4.0.md
+        buildPhase: resources
+      - path: LICENSES/d3-celestial-BSD.txt
+        buildPhase: resources
       - path: LICENSES/MMSegmentation-Apache-2.0.txt
         buildPhase: resources
     info:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: PLS
-        CFBundleShortVersionString: "1.7.2"
-        CFBundleVersion: "20"
+        CFBundleShortVersionString: "1.8.0"
+        CFBundleVersion: "21"
         CADisableMinimumFrameDurationOnPhone: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

@@ -112,7 +112,8 @@ enum SkyScanLocation {
         if supportsDepth && collecting { configuration.frameSemantics.insert(.sceneDepth) }
         // A lower capture resolution limits energy use without affecting the angular map.
         if let format = ARWorldTrackingConfiguration.supportedVideoFormats
-            .filter({ $0.framesPerSecond == 30 }).min(by:{ $0.imageResolution.width < $1.imageResolution.width }) {
+            .filter({ $0.framesPerSecond == 30 && $0.captureDeviceType == .builtInWideAngleCamera })
+            .min(by:{ $0.imageResolution.width < $1.imageResolution.width }) {
             configuration.videoFormat = format
         }
         isPreview = false

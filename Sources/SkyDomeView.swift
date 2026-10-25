@@ -153,7 +153,7 @@ struct SkyDomeObserverPose {
     static let upperArmLength = 0.18
     static let forearmLength = 0.17
     // Fixed handset coordinates, not positions inferred from the current view.
-    static let cameraLenses: [(x: Double,y: Double)] = [(0.025,0.076),(0.025,0.038),(-0.009,0.057)]
+    static let cameraLenses: [(x: Double,y: Double)] = [(0.022,0.081),(0.022,0.055),(-0.004,0.068)]
     let forward: SkyDomeVector
     let right: SkyDomeVector
 
@@ -504,14 +504,14 @@ struct SkyDomeView: View {
         let face = showsBack ? 0.004:-0.004
         polygon(phonePanel(width:0.092,height:0.194,radius:0.013,offset:face),white:0.73,outline:true)
         if showsBack {
-            polygon(phonePanel(x:0.010,y:0.057,width:0.067,height:0.067,radius:0.010,offset:0.010),white:0.48)
+            polygon(phonePanel(x:0.010,y:0.068,width:0.047,height:0.047,radius:0.007,offset:0.010),white:0.48)
             // Pro camera island: three separate lenses in a triangle.
             for (x,y) in SkyDomeObserverPose.cameraLenses {
-                lens(x:x,y:y,radius:0.013,offset:0.012,white:0.67)
-                lens(x:x,y:y,radius:0.010,offset:0.013,white:0.06)
-                lens(x:x-0.003,y:y+0.003,radius:0.003,offset:0.014,white:0.35)
+                lens(x:x,y:y,radius:0.009,offset:0.012,white:0.67)
+                lens(x:x,y:y,radius:0.0068,offset:0.013,white:0.06)
+                lens(x:x-0.002,y:y+0.002,radius:0.002,offset:0.014,white:0.35)
             }
-            lens(x:-0.009,y:0.083,radius:0.004,offset:0.012,white:0.89)
+            lens(x:-0.004,y:0.085,radius:0.0028,offset:0.012,white:0.89)
         } else {
             polygon(phonePanel(width:0.081,height:0.180,radius:0.010,offset:-0.006),white:0.12)
             polygon(phonePanel(y:0.075,width:0.027,height:0.008,radius:0.004,offset:-0.007),white:0.025)
