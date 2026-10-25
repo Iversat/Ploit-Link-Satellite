@@ -22,7 +22,10 @@ final class NightSkyFlowTests: XCTestCase {
     }
     func testKeyboardAndSimulatedReply() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-screenshot-demo-chat"]; app.launch()
-        let input = app.textViews["demoMessageInput"]
+        let input = app.descendants(matching:.any).matching(NSPredicate(
+            format:"identifier == %@ AND (elementType == %d OR elementType == %d)",
+            "demoMessageInput", XCUIElement.ElementType.textField.rawValue, XCUIElement.ElementType.textView.rawValue
+        )).firstMatch
         XCTAssertTrue(input.waitForExistence(timeout:10)); input.tap(); input.typeText("Hello satellite")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         app.buttons["sendDemoMessage"].tap()
