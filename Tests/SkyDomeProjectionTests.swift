@@ -120,8 +120,9 @@ final class SkyDomeProjectionTests: XCTestCase {
     func testProCameraIslandHasThreeRigidLensesAcrossWorldRotation() {
         let lenses = SkyDomeObserverPose.cameraLenses
         XCTAssertEqual(lenses.count,3)
-        let area = abs((lenses[1].x-lenses[0].x)*(lenses[2].y-lenses[0].y)
-                     -(lenses[1].y-lenses[0].y)*(lenses[2].x-lenses[0].x))
+        let firstProduct = (lenses[1].x-lenses[0].x)*(lenses[2].y-lenses[0].y)
+        let secondProduct = (lenses[1].y-lenses[0].y)*(lenses[2].x-lenses[0].x)
+        let area = abs(firstProduct - secondProduct)
         XCTAssertGreaterThan(area,0.001,"The three lenses form a triangle, not a vertical strip.")
         for bearing in stride(from:0.0,to:360,by:15) {
             let pose = SkyDomeObserverPose(startAzimuth:bearing)
