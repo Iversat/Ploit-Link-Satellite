@@ -35,6 +35,7 @@ jobs:
           set -euo pipefail
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
+          uname -m
           command -v xcodegen || brew install xcodegen
           python3 tools/fetch-sky-fixtures.py
           xcodegen generate
@@ -44,6 +45,14 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -project PloitSatellite.xcodeproj -scheme PloitSatellite -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build | tee build-device.log
+      - name: Validate full 16K sky on the host Apple GPU
+        run: |
+          set -euo pipefail
+          mkdir -p build/TextureCheck.app/Contents/MacOS build/TextureCheck.app/Contents/Resources
+          cp Resources/night-sky-*.astc build/TextureCheck.app/Contents/Resources/
+          python3 -c 'import plistlib;plistlib.dump({"CFBundleIdentifier":"ru.ploit.texturecheck","CFBundleExecutable":"TextureCheck","CFBundlePackageType":"APPL"},open("build/TextureCheck.app/Contents/Info.plist","wb"))'
+          xcrun swiftc Sources/NightSkyTexture.swift tools/validate-night-texture.swift -framework MetalKit -o build/TextureCheck.app/Contents/MacOS/TextureCheck
+          MTL_DEBUG_LAYER=1 build/TextureCheck.app/Contents/MacOS/TextureCheck | tee build/night-texture-check.log
       - name: Package and verify unsigned IPA
         id: package
         run: |
@@ -119,7 +128,13 @@ jobs:
                     [ -f "$DATA/Library/Caches/night-panorama-ready" ] && break
                     sleep 1
                   done
-                  test -f "$DATA/Library/Caches/night-panorama-ready"
+                  if [ ! -f "$DATA/Library/Caches/night-panorama-ready" ]; then
+                    xcrun simctl io "$DEVICE" screenshot "build/screenshots/$KIND-$SCENE-failed.png" || true
+                    xcrun simctl spawn "$DEVICE" log show --last 2m --style compact --predicate 'process == "PloitSatellite"' > build/night-sky-errors.log || true
+                    mkdir -p build/crashes
+                    cp "$HOME"/Library/Logs/DiagnosticReports/PloitSatellite* build/crashes/ 2>/dev/null || true
+                    exit 1
+                  fi
                   ;;
               esac
               sleep 3
@@ -139,7 +154,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Unit tests and application UI tests
-        if: ${{ inputs.test_scope != 'none' }}
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' && inputs.test_scope != 'none' }}
         env:
           RECORD_INTERACTIONS: ${{ inputs.record_interactions }}
           TEST_SCOPE: ${{ inputs.test_scope }}
@@ -200,6 +215,9 @@ jobs:
             build-device.log
             build-simulator.log
             build-site-tests.log
+            build/night-sky-errors.log
+            build/night-texture-check.log
+            build/crashes
           if-no-files-found: warn
           retention-days: 14
       - name: Stop simulators

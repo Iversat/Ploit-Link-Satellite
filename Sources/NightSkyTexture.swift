@@ -36,14 +36,17 @@ enum NightSkyTexture {
             return try MTKTextureLoader(device:device).newTexture(URL:url,options:[.SRGB:true,.origin:MTKTextureLoader.Origin.topLeft.rawValue,.generateMipmaps:true,.textureUsage:MTLTextureUsage.shaderRead.rawValue])
         }
         #endif
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat:.astc_5x5_srgb,width:width,height:height,mipmapped:true)
+        // Simulator exposes Apple2 limits (8K), even on a newer host GPU.
+        // Supported physical iPhones expose Apple3 or later and use all 16K.
+        let firstLevel = device.supportsFamily(.apple3) ? 0 : 1
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat:.astc_5x5_srgb,width:width >> firstLevel,height:height >> firstLevel,mipmapped:true)
         descriptor.storageMode = .shared; descriptor.usage = .shaderRead
         guard let texture = device.makeTexture(descriptor:descriptor) else { throw CocoaError(.coderInvalidValue) }
-        for index in 0..<levels {
+        for index in firstLevel..<levels {
             try autoreleasepool {
                 let part = try level(index)
                 part.data.withUnsafeBytes { bytes in
-                    texture.replace(region:MTLRegionMake2D(0,0,part.width,part.height),mipmapLevel:index,
+                    texture.replace(region:MTLRegionMake2D(0,0,part.width,part.height),mipmapLevel:index-firstLevel,
                                     withBytes:bytes.baseAddress!.advanced(by:16),bytesPerRow:part.rowBytes)
                 }
             }
