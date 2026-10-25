@@ -29,19 +29,20 @@ final class NightSkyTests: XCTestCase {
         XCTAssertEqual(catalog.stars.count,5070)
         let sirius = try XCTUnwrap(catalog.stars.first { $0.name == "Сириус" })
         XCTAssertEqual(sirius.ra,101.287,accuracy:0.01); XCTAssertEqual(sirius.dec,-16.716,accuracy:0.01)
-        XCTAssertNotNil(catalog.constellations.first { $0.id == "UMa" })
+        XCTAssertEqual(Set(catalog.constellations.map(\.id)).count,catalog.constellations.count)
+        XCTAssertEqual(catalog.constellations.first { $0.id == "UMa" }?.name,"Большая Медведица")
         XCTAssertNotNil(catalog.constellations.first { $0.id == "UMi" })
-        XCTAssertGreaterThan(catalog.milkyWay.count,0)
+        XCTAssertGreaterThan(MilkyWayBand.samples.count,1000)
         XCTAssertTrue(catalog.stars.allSatisfy { $0.magnitude <= 6 && $0.ra.isFinite && (-90...90).contains($0.dec) })
     }
-    func testWholeSkySnapshotsRemainFiniteAndMilkyWayClipsToViewport() throws {
+    func testWholeSkySnapshotsRemainFiniteAndPolygonsClipToViewport() throws {
         let catalog = try NightSkyCatalog.load()
         let snapshot = NightSkySnapshot.make(catalog:catalog,observer:.init(latitude:48.708,longitude:44.513,altitudeM:0),date:Date(timeIntervalSince1970:1792951200))
         XCTAssertEqual(snapshot.stars.count,catalog.stars.count)
         for az in stride(from:0.0,to:360,by:60) {
             let p = NightProjection(basis:NightSkyMath.basis(azimuth:az,elevation:45),size:CGSize(width:400,height:800),focal:280)
-            for polygon in snapshot.milkyWay {
-                for point in p.clipped(polygon) {
+            for line in snapshot.lines {
+                for point in p.clipped(line) {
                     XCTAssertTrue(point.x.isFinite && point.y.isFinite)
                     XCTAssertTrue(p.visible(point,margin:0.01))
                 }

@@ -11,7 +11,7 @@ final class NightSkyFlowTests: XCTestCase {
         XCTAssertNotEqual(canvas.value as? String,old)
         app.buttons["findSkyObject"].tap()
         let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout:5)); search.tap(); search.typeText("Большая Медведица")
+        XCTAssertTrue(search.waitForExistence(timeout:5)); search.tap(); search.typeText("UMa")
         let target = app.buttons.matching(NSPredicate(format:"label CONTAINS[cd] %@","Большая Медведица")).firstMatch
         XCTAssertTrue(target.waitForExistence(timeout:5)); target.tap()
         XCTAssertTrue(app.staticTexts["Большая Медведица"].waitForExistence(timeout:5))

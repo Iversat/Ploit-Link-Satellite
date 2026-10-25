@@ -18,17 +18,18 @@ translate selected proper names into Russian and omit unused columns.
 Original CSV SHA256: d9f69fd86bbf90a4e4d52b4c5c53eacfa6dfc0bfdef85bfd94f095e0bebe4ebd.
 The upstream license notice is included as `HYG-CC-BY-SA-4.0.md`.
 
-## Constellations and Milky Way
+## Constellations
 
 d3-celestial, copyright (c) 2015 Olaf Frohn. BSD 3-Clause;
 full notice and disclaimer: `d3-celestial-BSD.txt`.
 Source: https://github.com/ofrohn/d3-celestial/tree/master/data
-Files: `constellations.json`, `constellations.lines.json`, `mw.json`.
-Changes: combine Russian labels and line figures, omit unused languages, reduce
-closely spaced Milky Way contour vertices, convert the GeoJSON wrapper to arrays.
+Files: `constellations.json`, `constellations.lines.json`.
+Changes: combine and normalize Russian labels and line figures, omit unused
+languages, give the two Serpens figures distinct IDs, convert GeoJSON to arrays.
 The two Serpens figures are retained separately (89 figures for 88 constellations).
 
-The Milky Way is a contrast-enhanced schematic. The app does not measure naked-eye
+The Milky Way is an original contrast-enhanced schematic band aligned with the
+IAU J2000 Galactic coordinate plane, with illustrative brightness and dust. The app does not measure naked-eye
 visibility or identify stars from camera images. AR alignment depends on the
 device's compass and attitude. The catalogue contains fixed stars, not planets.
 

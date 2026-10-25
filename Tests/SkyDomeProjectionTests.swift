@@ -123,7 +123,9 @@ final class SkyDomeProjectionTests: XCTestCase {
         let firstProduct = (lenses[1].x-lenses[0].x)*(lenses[2].y-lenses[0].y)
         let secondProduct = (lenses[1].y-lenses[0].y)*(lenses[2].x-lenses[0].x)
         let area = abs(firstProduct - secondProduct)
-        XCTAssertGreaterThan(area,0.001,"The three lenses form a triangle, not a vertical strip.")
+        let edgeProduct = hypot(lenses[1].x-lenses[0].x,lenses[1].y-lenses[0].y)
+            * hypot(lenses[2].x-lenses[0].x,lenses[2].y-lenses[0].y)
+        XCTAssertGreaterThan(area/edgeProduct,0.5,"The three lenses form a triangle at any icon scale.")
         for bearing in stride(from:0.0,to:360,by:15) {
             let pose = SkyDomeObserverPose(startAzimuth:bearing)
             let center = pose.handsetPoint(0,0)

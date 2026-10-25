@@ -9,7 +9,7 @@ private struct NightSkyContent: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
-    @ObservedObject var sensors: Sensors
+    let sensors: Sensors
     @StateObject private var camera = NightCamera()
     @State private var catalog: NightSkyCatalog?
     @State private var snapshot = NightSkySnapshot()
@@ -79,7 +79,9 @@ private struct NightSkyContent: View {
                         notice(sunElevation > -6 ? "Сейчас светло: карта показывает расчётное небо. Звёзды лучше видны ночью." : "Сумерки: слабые звёзды и Млечный Путь могут быть не видны.")
                     }
                     Spacer(minLength:8)
-                    if let selected { targetCard(selected) }
+                    if let selected {
+                        TimelineView(.animation(minimumInterval:1.0/15,paused:mode == 0 || phase != .active)) { _ in targetCard(selected) }
+                    }
                     controls
                 }.padding(.horizontal,20).padding(.top,8).padding(.bottom,8)
             }.clipped()
@@ -99,6 +101,7 @@ private struct NightSkyContent: View {
         .task(id:skyKey) {
             guard let catalog, let observer else { snapshot = NightSkySnapshot(); return }
             let date = date
+            do { try await Task.sleep(nanoseconds:80_000_000) } catch { return }
             let calculated = await Task.detached(priority:.userInitiated) {
                 NightSkySnapshot.make(catalog:catalog,observer:observer,date:date)
             }.value
@@ -197,7 +200,7 @@ private struct NightSkyContent: View {
                     Text("Млечный Путь показан условно усиленным. Облака, засветка и Луна влияют на реальную видимость; карта не является её измерением. Планеты и Луна в этот каталог не входят.")
                 }
                 Section("Каталоги") {
-                    Text("Звёзды: HYG v4.1 · David Nash / Astronexus · CC BY-SA 4.0. Созвездия и контуры Млечного Пути: d3-celestial · Olaf Frohn · BSD-3-Clause.")
+                    Text("Звёзды: HYG v4.1 · David Nash / Astronexus · CC BY-SA 4.0. Созвездия: d3-celestial · Olaf Frohn · BSD-3-Clause.")
                     Link("Источники и лицензии",destination:URL(string:"https://github.com/Iversat/Ploit-Link-Satellite/blob/main/LICENSES/NightSky-NOTICE.md")!)
                 }
             }.navigationTitle("О ночном небе").toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Готово") { information = false } } }
@@ -209,11 +212,19 @@ private struct NightSkyContent: View {
         var context = context
         context.clip(to:Path(CGRect(origin:.zero,size:size)))
         if showMilkyWay {
-            for polygon in snapshot.milkyWay {
-                let points = projection.clipped(polygon)
-                guard let first = points.first, points.count >= 3 else { continue }
-                var path = Path(); path.move(to:first); for point in points.dropFirst() { path.addLine(to:point) }; path.closeSubpath()
-                context.fill(path,with:.color(Color(red:0.45,green:0.55,blue:0.72).opacity(mode == 1 ? 0.045:0.065)))
+            var clouds = Array(repeating:Path(),count:8)
+            for sample in snapshot.milkyWay {
+                guard let point = projection.point(sample.direction), projection.visible(point,margin:35) else { continue }
+                let depth = max(0.1,sample.direction.dot(projection.forward))
+                let r = min(32,max(5,projection.focal*0.028/depth))
+                let band = min(7,max(0,Int(sample.brightness*8)))
+                clouds[band].addEllipse(in:CGRect(x:point.x-r,y:point.y-r,width:r*2,height:r*2))
+            }
+            context.drawLayer { glow in
+                glow.addFilter(.blur(radius:5))
+                for band in 0..<8 {
+                    glow.fill(clouds[band],with:.color(Color(red:0.64,green:0.72,blue:0.88).opacity((Double(band)+1)*0.006)))
+                }
             }
         }
         if showLines {
@@ -266,7 +277,8 @@ private struct NightSkyContent: View {
             if let p, projection.visible(p,margin:-30) {
                 context.stroke(Path(ellipseIn:CGRect(x:p.x-15,y:p.y-15,width:30,height:30)),with:.color(.white),lineWidth:1)
             } else {
-                let x = target.dot(projection.basis.x), y = -target.dot(projection.basis.y)
+                let rawX = target.dot(projection.basis.x), rawY = -target.dot(projection.basis.y)
+                let x = hypot(rawX,rawY) < 0.001 ? 1:rawX, y = rawY
                 let length = max(0.001,hypot(x,y)), r = min(size.width,size.height)*0.32
                 let point = CGPoint(x:size.width/2+x/length*r,y:size.height/2+y/length*r)
                 var arrow = context; arrow.translateBy(x:point.x,y:point.y); arrow.rotate(by:.radians(atan2(y,x)+Double.pi/2))
@@ -294,7 +306,7 @@ private struct NightObjectPicker: View {
                     }
                 }
                 Section("Созвездия") {
-                    ForEach(catalog.constellations.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }.sorted { $0.name < $1.name }) { c in
+                    ForEach(catalog.constellations.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.id.localizedCaseInsensitiveContains(search) }.sorted { $0.name < $1.name }) { c in
                         Button(c.name) { select(.init(id:c.id,name:c.name,ra:c.ra,dec:c.dec,detail:"Созвездие · \(c.id). Метка указывает область фигуры; линии соединяют звёзды на карте.")) }
                     }
                 }
